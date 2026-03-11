@@ -14,6 +14,12 @@ __pycache__/
 # Environment files
 .env
 .env.*
+# Keep example env file tracked
+!.env.example
+
+# Ignore encryption script and GitHub folder
+encrypt_env.py
+.github/
 
 # Byte-compiled / distribution
 build/
@@ -24,3 +30,6 @@ dist/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# original .ipynb
+*.ipynb

@@ -1,0 +1,173 @@
+# ──────────────────────────────────────────────
+# Medline PBO Pipeline — Configuration
+# ──────────────────────────────────────────────
+
+email:
+  aad_endpoint: "https://login.microsoftonline.com"
+  graph_endpoint: "https://graph.microsoft.com"
+  from_email: "procurementdatateam@montefiore.org"
+  folder_name: "Monte PBO"
+  keyword: "Monte PBO"
+  destination_path: 'I:\Procurement PMO\dli2\Monte PBO\Raw'
+  max_messages: 100
+
+database:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: "MISCPrdAdhocDB"
+  database: "PRIME"
+  trusted_connection: "yes"
+  location: "IMDCSTRM"
+
+report:
+  version: "1.3"
+  review_threshold: -10 # in days
+  # basically this means we need to have at least 10 days of coverage by the estimated available date. 
+  # it is measured as Days Get Well - DIOH
+  # Days Get Well = Est Available Date - Today
+  # DIOH = On Hand / Average Daily Issue Out
+  output_dir: 'I:\Procurement PMO\dli2\Monte PBO'
+  file_name_split_token: "Levels"
+
+  # Jesse selection criteria
+  risk_levels: ["High", "Severe"]
+  duration_threshold: 3
+
+  required_columns: # for the input file
+    - "Risk Level"
+    - "Customer Material Number"
+    - "Medline Item"
+    - "Manufacturer Item"
+    - "Material Description"
+    - "On Allocation?"
+    - "Packaging String"
+    - "Est Available Date"
+    - "Parent Item"
+    - "Duration"
+    - "Forecast Qty"
+
+  # ── Column groups (control report layout) ──
+  columns:
+    base_report:
+      - "Risk Level"
+      - "Customer Material Number"
+      - "Medline Item"
+      - "MIOH"
+      - "Manufacturer Item"
+      - "Material Description"
+      - "SoldTo"
+      - "SoldToName"
+      - "Forecast Qty"
+      - "Branch"
+      - "On Allocation?"
+      - "Packaging String"
+      - "Est Depletion Date"
+      - "Est Available Date"
+      - "Duration"
+      - "Est Delivery Date"
+      - "Doc Appointment Date"
+      - "Parent Item"
+      - "Jesse Selection"
+      - "Dummy ID"
+
+    item:
+      - "Matched IMDCSTRM"
+      - "No Issue Out (Last 365 Days)"
+      - "report stamp"
+      - "Item"
+      - "VendorItem"
+      - "AvailableQty"
+      - "OnOrderQty"
+      - "DefaultBuyUOM"
+      - "BuyUOMMultiplier"
+      - "StockUOM"
+      - "AverageDailyIssueOut"
+      - "DIOH"
+      - "Days to Get Well"
+      - "Get Well - DIOH"
+      - "Flag"
+      - "Description3"
+
+    item_group:
+      - "With Sub"
+      - "Item Group"
+      - "Replace Item"
+      - "VendorItem_Repl."
+      - "AvailableQty_Repl."
+      - "OnOrderQty_Repl."
+      - "DefaultBuyUOM_Repl."
+      - "BuyUOMMultiplier_Repl."
+      - "StockUOM_Repl."
+      - "Description3_Repl."
+      - "AvailableQty_ig"
+      - "AverageDailyIssueOut_ig"
+      - "DIOH_ig"
+      - "Get Well - DIOH_ig"
+      - "Flag_ig"
+
+    rmd:
+      - "Recommended Order Qty (EA)"
+      - "Recomended Order Qty (in BuyUOM)"
+      - "Recomended Order Qty (in BuyUOM)_Repl."
+      - "Alternative UOM Group"
+      - "from UOM"
+      - "to UOM"
+      - "Conversion Factor"
+      - "Recomnded Order Qty (In Alternative from UOM)"
+
+    rmd_debug:
+      - "Target Item Qty (EA)"
+      - "Target Item Qty (EA)_ig"
+      - "Target Coverage"
+      - "Target Coverage_ig"
+
+    stamp:
+      - "Inventory Data As Of"
+
+  # ── Columns to hide in the final Excel ──
+  col_to_hide:
+    - "SoldTo"
+    - "SoldToName"
+    - "Branch"
+    - "Doc Appointment Date"
+    - "Parent Item"
+    - "Dummy ID"
+    - "No Issue Out (Last 365 Days)"
+    - "report stamp"
+    - "VendorItem"
+    - "Flag"
+    - "VendorItem_Repl."
+    - "Flag_ig"
+    # rmd_debug + stamp are appended programmatically
+
+  # ── Formatting groups ──
+  date_cols:
+    - "Est Depletion Date"
+    - "Est Available Date"
+    - "Est Delivery Date"
+
+  two_decimal_cols:
+    - "AverageDailyIssueOut"
+    - "AverageDailyIssueOut_ig"
+
+  thousands_sep_cols:
+    - "AvailableQty"
+    - "OnOrderQty"
+    - "BuyUOMMultiplier"
+    - "AvailableQty_Repl."
+    - "AvailableQty_ig"
+    - "OnOrderQty_Repl."
+    - "BuyUOMMultiplier_Repl."
+    - "Recommended Order Qty (EA)"
+    - "Recomended Order Qty (in BuyUOM)"
+    - "Recomended Order Qty (in BuyUOM)_Repl."
+    - "Conversion Factor"
+    - "Recomnded Order Qty (In Alternative from UOM)"
+    - "DIOH"
+    - "DIOH_ig"
+    - "Get Well - DIOH"
+    - "Get Well - DIOH_ig"
+
+  fill_cols:
+    - "Material Description"
+    - "Description3"
+    - "Description3_Repl."
