@@ -1,0 +1,26 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDEs and editors
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.*
+
+# Byte-compiled / distribution
+build/
+dist/
+*.egg-info/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
