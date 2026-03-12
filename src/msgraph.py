@@ -120,3 +120,84 @@ def get_latest_excel_attachment(keyword, destination_path, config, secrets):
 
     print("Email found, but no .xlsx attachment was inside.")
     return None, None
+
+
+# ── Email sending ────────────────────────────────────────────
+
+
+def send_email_with_attachment(
+    config, secrets, recipients, subject, body_text, attachment_path=None
+):
+    """Send an email (with optional attachment) via Microsoft Graph.
+
+    Parameters
+    ----------
+    recipients : list[str]
+        Email addresses to send to.
+    attachment_path : str | None
+        Path to a local file to attach (or None for no attachment).
+    """
+    token = get_access_token(secrets, config)
+    graph = config["email"]["graph_endpoint"]
+    sender = config["email"]["from_email"]
+    url = f"{graph}/v1.0/users/{sender}/sendMail"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    to_recipients = [
+        {"emailAddress": {"address": addr}} for addr in recipients
+    ]
+
+    message = {
+        "subject": subject,
+        "body": {"contentType": "Text", "content": body_text},
+        "toRecipients": to_recipients,
+    }
+
+    if attachment_path and os.path.isfile(attachment_path):
+        with open(attachment_path, "rb") as f:
+            content = base64.b64encode(f.read()).decode("utf-8")
+        message["attachments"] = [
+            {
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "name": os.path.basename(attachment_path),
+                "contentBytes": content,
+            }
+        ]
+
+    resp = requests.post(
+        url, headers=headers, json={"message": message}, timeout=30,
+    )
+    _raise_for_status_with_details(resp, "Failed to send email via Graph API")
+    print(f"Email sent to {recipients} — {subject}")
+
+
+def send_success_notification(config, secrets, output_path):
+    """Notify success recipients with the output Excel attached."""
+    recipients = config["notification"]["success_recipients"]
+    send_email_with_attachment(
+        config,
+        secrets,
+        recipients,
+        subject="Medline PBO Report — Success",
+        body_text="The Medline PBO report is analyzed and enriched.",
+        attachment_path=output_path,
+    )
+
+
+def send_failure_notification(config, secrets, log_path):
+    """Notify failure recipients with the error log attached."""
+    recipients = config["notification"]["failure_recipients"]
+    send_email_with_attachment(
+        config,
+        secrets,
+        recipients,
+        subject="Medline PBO Report — Failed",
+        body_text=(
+            "The Medline PBO report encountered an error. "
+            "Please see the attached log for details."
+        ),
+        attachment_path=log_path,
+    )

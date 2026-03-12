@@ -138,7 +138,7 @@ report:
     - "VendorItem_Repl."
     - "Flag_ig"
     # rmd_debug + stamp are appended programmatically
-
+  
   # ── Formatting groups ──
   date_cols:
     - "Est Depletion Date"
@@ -171,3 +171,40 @@ report:
     - "Material Description"
     - "Description3"
     - "Description3_Repl."
+
+
+# ──────────────────────────────────────────────
+# Notification — email recipients
+# ──────────────────────────────────────────────
+notification:
+  success_recipients:
+    - "dli2@montefiore.org"
+  failure_recipients:
+    - "dli2@montefiore.org"
+
+# ──────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────
+logging:
+  log_dir: 'I:\Procurement PMO\dli2\Monte PBO\Log'
+
+# ──────────────────────────────────────────────
+# Maintenance — monthly cleanup & archiving
+# ──────────────────────────────────────────────
+maintenance:
+  cleanup_day_range: [3, 10]  # run when day-of-month is between these (inclusive)
+  output_archive_dir: 'I:\Procurement PMO\dli2\Monte PBO\Archived'
+
+# ──────────────────────────────────────────────
+# ETL Health — process status tracking
+# ──────────────────────────────────────────────
+etl_health:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlinePBO"
+  table: "ETLHealth"
+  process_name: "Medline PBO"
+  process_id: "MEDPBO_W_DL"
+  process_frequency: "Tue, Thu"

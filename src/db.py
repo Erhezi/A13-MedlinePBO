@@ -80,3 +80,58 @@ def fetch_all_tables(conn, location):
         sql = template.format(location=location)
         results[name] = pd.read_sql_query(sql, conn)
     return results
+
+
+# ── ETL Health tracking ──────────────────────────────────────
+
+
+def insert_etl_health(
+    config,
+    *,
+    source_file_path,
+    last_run_time,
+    task_status,
+    row_count,
+    package_path,
+    log_file_path,
+    error_message,
+):
+    """Insert a row into [MedlinePBO].[ETLHealth] on the ETL-health server.
+
+    Uses a *separate* connection from the main PRIME database.
+    """
+    etl = config["etl_health"]
+    conn = pyodbc.connect(
+        driver=etl["driver"],
+        server=etl["server"],
+        database=etl["database"],
+        trusted_connection=etl["trusted_connection"],
+    )
+    sql = (
+        f"INSERT INTO [{etl['schema']}].[{etl['table']}] "
+        "([ProcessName], [ProcessID], [SourceFilePath], [LastRunTime], "
+        "[TargetTableName], [TaskStatus], [RowCount], [PackagePath], "
+        "[LogFilePath], [STGTableName], [ProcessFrequency], [Error]) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    params = (
+        etl["process_name"],
+        etl["process_id"],
+        source_file_path or "",
+        last_run_time,
+        "Not Applicable",
+        task_status,
+        row_count,
+        package_path,
+        log_file_path or "",
+        "Not Applicable",
+        etl["process_frequency"],
+        error_message,
+    )
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        conn.commit()
+        print(f"ETL Health logged — {task_status}")
+    finally:
+        conn.close()
