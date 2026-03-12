@@ -213,8 +213,8 @@ If this manual run fails, do not create the scheduled task yet.
 
 Examples:
 
-1. Daily at 6:00 AM
-2. Weekdays only
+1. Daily at 11:30 AM
+2. Tuesday and Thursday at 11:30 AM (this will be the setting for this PBO Report)
 3. After server startup
 
 ### Step 5: Add the action
