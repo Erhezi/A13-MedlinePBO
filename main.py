@@ -7,6 +7,8 @@ Usage:
 
 import argparse
 import os
+import subprocess
+import sys
 import traceback
 import warnings
 from datetime import datetime
@@ -44,21 +46,73 @@ from src.report import (
     build_output_filename,
     apply_inventory_styling,
 )
+from src.secret_crypto import SECRET_ENV_VAR
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 PACKAGE_PATH = os.path.abspath(__file__)
+PIPELINE_TIMEOUT_SECONDS = 15 * 60
 
 
-def main(config_path="config.yaml"):
+def _load_runtime_config_and_secrets(config_path):
+    config = load_config(config_path)
+    try:
+        secrets = load_secrets()
+    except RuntimeError as exc:
+        if SECRET_ENV_VAR in str(exc):
+            raise SystemExit(
+                "Missing encrypted-secret passphrase. Run 'python first_time_setup.py' first."
+            ) from exc
+        raise
+    return config, secrets
+
+
+def _build_log_path(log_dir, start_time):
+    stamp = start_time.strftime("%Y%m%d_%H%M%S")
+    os.makedirs(log_dir, exist_ok=True)
+    return os.path.join(log_dir, f"log_{stamp}.txt")
+
+
+def _append_timeout_to_log(log_path, start_time):
+    timeout_minutes = PIPELINE_TIMEOUT_SECONDS // 60
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        log_file.write("\n")
+        log_file.write(
+            f"TIMEOUT: Pipeline exceeded {timeout_minutes} minutes and was terminated at "
+            f"{datetime.now():%Y-%m-%d %H:%M:%S}.\n"
+        )
+        log_file.write(f"Pipeline start time was {start_time:%Y-%m-%d %H:%M:%S}.\n")
+
+
+def _handle_timeout_failure(config, secrets, start_time, log_path):
+    try:
+        send_failure_notification(config, secrets, log_path)
+    except Exception as mail_exc:
+        print(f"Failed to send failure notification: {mail_exc}")
+
+    try:
+        insert_etl_health(
+            config,
+            source_file_path="",
+            last_run_time=start_time,
+            task_status="TIMEOUT",
+            row_count=0,
+            package_path=PACKAGE_PATH,
+            log_file_path=log_path,
+            error_message=f"Pipeline exceeded {PIPELINE_TIMEOUT_SECONDS // 60} minutes",
+        )
+    except Exception as db_exc:
+        print(f"Failed to insert ETL health: {db_exc}")
+
+
+def worker_main(config_path="config.yaml", log_path=None):
     # ── 0. Load config & secrets, start logger ──
     start_time = datetime.now()
-    config = load_config(config_path)
-    secrets = load_secrets()
+    config, secrets = _load_runtime_config_and_secrets(config_path)
 
-    logger = TeeLogger(config["logging"]["log_dir"])
+    logger = TeeLogger(config["logging"]["log_dir"], log_path=log_path)
 
     source_file_path = ""
     row_count = 0
@@ -184,10 +238,46 @@ def main(config_path="config.yaml"):
             print(f"Maintenance error (non-fatal): {mnt_exc}")
 
 
+def main(config_path="config.yaml"):
+    start_time = datetime.now()
+    config, secrets = _load_runtime_config_and_secrets(config_path)
+    log_path = _build_log_path(config["logging"]["log_dir"], start_time)
+    cmd = [
+        sys.executable,
+        PACKAGE_PATH,
+        "--config",
+        config_path,
+        "--worker",
+        "--log-path",
+        log_path,
+    ]
+
+    try:
+        completed = subprocess.run(cmd, timeout=PIPELINE_TIMEOUT_SECONDS, check=False)
+    except subprocess.TimeoutExpired:
+        _append_timeout_to_log(log_path, start_time)
+        print(
+            f"TIMEOUT: Pipeline exceeded {PIPELINE_TIMEOUT_SECONDS // 60} minutes and was terminated."
+        )
+        _handle_timeout_failure(config, secrets, start_time, log_path)
+        raise SystemExit(1)
+
+    raise SystemExit(completed.returncode)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Medline PBO report pipeline")
     parser.add_argument(
         "--config", default="config.yaml", help="Path to YAML config file",
     )
+    parser.add_argument(
+        "--worker", action="store_true", help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--log-path", default=None, help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
-    main(args.config)
+    if args.worker:
+        worker_main(args.config, log_path=args.log_path)
+    else:
+        main(args.config)

@@ -36,10 +36,12 @@ class TeeLogger:
     >>> log_path = logger.close()
     """
 
-    def __init__(self, log_dir):
+    def __init__(self, log_dir, log_path=None):
         os.makedirs(log_dir, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self._log_path = os.path.join(log_dir, f"log_{stamp}.txt")
+        if log_path is None:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_path = os.path.join(log_dir, f"log_{stamp}.txt")
+        self._log_path = log_path
         self._log_file = open(self._log_path, "w", encoding="utf-8")
 
         self._orig_stdout = sys.stdout

@@ -1,6 +1,8 @@
 import os
 import yaml
 
+from src.secret_crypto import decrypt_secret_value
+
 
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
@@ -42,4 +44,10 @@ def load_secrets(env_path=".env"):
             if not key:
                 continue
             secrets[key.strip()] = _normalize_secret_value(value)
+
+    for secret_key in ("CLIENT_SECRET", "CLIENT_SECRET_FUTURE"):
+        hashed_key = f"{secret_key}_HASHED"
+        hashed_value = secrets.get(hashed_key)
+        if hashed_value:
+            secrets[secret_key] = decrypt_secret_value(hashed_value)
     return secrets
