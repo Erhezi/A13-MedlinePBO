@@ -126,7 +126,13 @@ def get_latest_excel_attachment(keyword, destination_path, config, secrets):
 
 
 def send_email_with_attachment(
-    config, secrets, recipients, subject, body_text, attachment_path=None
+    config,
+    secrets,
+    recipients,
+    subject,
+    body_text,
+    attachment_path=None,
+    cc_recipients=None,
 ):
     """Send an email (with optional attachment) via Microsoft Graph.
 
@@ -136,6 +142,8 @@ def send_email_with_attachment(
         Email addresses to send to.
     attachment_path : str | None
         Path to a local file to attach (or None for no attachment).
+    cc_recipients : list[str] | None
+        Email addresses to copy on the message.
     """
     token = get_access_token(secrets, config)
     graph = config["email"]["graph_endpoint"]
@@ -155,6 +163,11 @@ def send_email_with_attachment(
         "body": {"contentType": "Text", "content": body_text},
         "toRecipients": to_recipients,
     }
+
+    if cc_recipients:
+        message["ccRecipients"] = [
+            {"emailAddress": {"address": addr}} for addr in cc_recipients
+        ]
 
     if attachment_path and os.path.isfile(attachment_path):
         with open(attachment_path, "rb") as f:
@@ -177,6 +190,7 @@ def send_email_with_attachment(
 def send_success_notification(config, secrets, output_path):
     """Notify success recipients with the output Excel attached."""
     recipients = config["notification"]["success_recipients"]
+    cc_recipients = config["notification"].get("success_cc_recipients", [])
     send_email_with_attachment(
         config,
         secrets,
@@ -184,6 +198,7 @@ def send_success_notification(config, secrets, output_path):
         subject="Medline PBO Report — Success",
         body_text="The Medline PBO report is analyzed and enriched.",
         attachment_path=output_path,
+        cc_recipients=cc_recipients,
     )
 
 

@@ -179,6 +179,10 @@ report:
 notification:
   success_recipients:
     - "dli2@montefiore.org"
+    # - "kmaral@montefiore.org"
+  success_cc_recipients:
+    # - "mcondoleo@montefiore.org"
+    # - "abhashem@montefiore.org"
   failure_recipients:
     - "dli2@montefiore.org"
 

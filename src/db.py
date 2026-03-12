@@ -92,6 +92,7 @@ def insert_etl_health(
     last_run_time,
     task_status,
     row_count,
+    duration,
     package_path,
     log_file_path,
     error_message,
@@ -110,9 +111,9 @@ def insert_etl_health(
     sql = (
         f"INSERT INTO [{etl['schema']}].[{etl['table']}] "
         "([ProcessName], [ProcessID], [SourceFilePath], [LastRunTime], "
-        "[TargetTableName], [TaskStatus], [RowCount], [PackagePath], "
+        "[TargetTableName], [TaskStatus], [RowCount], [Duration], [PackagePath], "
         "[LogFilePath], [STGTableName], [ProcessFrequency], [Error]) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     params = (
         etl["process_name"],
@@ -122,6 +123,7 @@ def insert_etl_health(
         "Not Applicable",
         task_status,
         row_count,
+        duration,
         package_path,
         log_file_path or "",
         "Not Applicable",

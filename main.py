@@ -86,7 +86,15 @@ def _append_timeout_to_log(log_path, start_time):
         log_file.write(f"Pipeline start time was {start_time:%Y-%m-%d %H:%M:%S}.\n")
 
 
+def _elapsed_seconds(start_time, end_time=None):
+    if end_time is None:
+        end_time = datetime.now()
+    return int((end_time - start_time).total_seconds())
+
+
 def _handle_timeout_failure(config, secrets, start_time, log_path):
+    duration = _elapsed_seconds(start_time)
+
     try:
         send_failure_notification(config, secrets, log_path)
     except Exception as mail_exc:
@@ -99,6 +107,7 @@ def _handle_timeout_failure(config, secrets, start_time, log_path):
             last_run_time=start_time,
             task_status="TIMEOUT",
             row_count=0,
+            duration=duration,
             package_path=PACKAGE_PATH,
             log_file_path=log_path,
             error_message=f"Pipeline exceeded {PIPELINE_TIMEOUT_SECONDS // 60} minutes",
@@ -197,6 +206,7 @@ def worker_main(config_path="config.yaml", log_path=None):
             last_run_time=start_time,
             task_status="SUCCESS",
             row_count=row_count,
+            duration=_elapsed_seconds(start_time),
             package_path=PACKAGE_PATH,
             log_file_path=logger.log_path,
             error_message="",
@@ -221,6 +231,7 @@ def worker_main(config_path="config.yaml", log_path=None):
                 last_run_time=start_time,
                 task_status="FAIL",
                 row_count=row_count,
+                duration=_elapsed_seconds(start_time),
                 package_path=PACKAGE_PATH,
                 log_file_path=log_path,
                 error_message="See Log",
