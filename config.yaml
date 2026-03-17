@@ -188,7 +188,7 @@ notification:
     - "abhashem@montefiore.org"
   failure_recipients:
     - "dli2@montefiore.org"
-    # - "abhashem@montefiore.org"
+    - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging
