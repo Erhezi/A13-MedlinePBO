@@ -1,7 +1,7 @@
 """Medline PBO pipeline — end-to-end entry point.
 
 Usage:
-    python main.py                      # uses config.yaml in cwd
+    python main.py                      # uses config.yaml next to main.py
     python main.py --config other.yaml  # custom config path
 """
 
@@ -13,7 +13,7 @@ import traceback
 import warnings
 from datetime import datetime
 
-from src.config_loader import load_config, load_secrets
+from src.config_loader import load_config, load_secrets, resolve_config_path
 from src.db import get_connection, fetch_all_tables, insert_etl_health
 from src.ingestion import (
     read_pbo_file,
@@ -57,7 +57,8 @@ PIPELINE_TIMEOUT_SECONDS = 15 * 60
 
 
 def _load_runtime_config_and_secrets(config_path):
-    config = load_config(config_path)
+    resolved_config_path = resolve_config_path(config_path)
+    config = load_config(resolved_config_path)
     try:
         secrets = load_secrets()
     except RuntimeError as exc:
@@ -66,7 +67,7 @@ def _load_runtime_config_and_secrets(config_path):
                 "Missing encrypted-secret passphrase. Run 'python first_time_setup.py' first."
             ) from exc
         raise
-    return config, secrets
+    return config, secrets, resolved_config_path
 
 
 def _build_log_path(log_dir, start_time):
@@ -119,7 +120,7 @@ def _handle_timeout_failure(config, secrets, start_time, log_path):
 def worker_main(config_path="config.yaml", log_path=None):
     # ── 0. Load config & secrets, start logger ──
     start_time = datetime.now()
-    config, secrets = _load_runtime_config_and_secrets(config_path)
+    config, secrets, _ = _load_runtime_config_and_secrets(config_path)
 
     logger = TeeLogger(config["logging"]["log_dir"], log_path=log_path)
 
@@ -192,7 +193,7 @@ def worker_main(config_path="config.yaml", log_path=None):
         # ── 5. Export styled report ──
         df_output_reordered = reorder_columns(df_output, config)
         output_path = build_output_filename(latest_file, config)
-        apply_inventory_styling(df_output_reordered, output_path, config)
+        output_path = apply_inventory_styling(df_output_reordered, output_path, config)
         print(f"[6/8] Report saved — {output_path}")
 
         # ── 6. Send success email ──
@@ -251,13 +252,13 @@ def worker_main(config_path="config.yaml", log_path=None):
 
 def main(config_path="config.yaml"):
     start_time = datetime.now()
-    config, secrets = _load_runtime_config_and_secrets(config_path)
+    config, secrets, resolved_config_path = _load_runtime_config_and_secrets(config_path)
     log_path = _build_log_path(config["logging"]["log_dir"], start_time)
     cmd = [
         sys.executable,
         PACKAGE_PATH,
         "--config",
-        config_path,
+        resolved_config_path,
         "--worker",
         "--log-path",
         log_path,

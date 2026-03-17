@@ -1,11 +1,32 @@
 import os
+from pathlib import Path
 import yaml
 
 from src.secret_crypto import decrypt_secret_value
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _resolve_project_path(path, default_base_dir=PROJECT_ROOT):
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+
+    cwd_candidate = Path.cwd() / candidate
+    if cwd_candidate.exists():
+        return cwd_candidate.resolve()
+
+    return (Path(default_base_dir) / candidate).resolve()
+
+
+def resolve_config_path(path="config.yaml"):
+    return str(_resolve_project_path(path))
+
+
 def load_config(path="config.yaml"):
-    with open(path, "r") as f:
+    config_path = resolve_config_path(path)
+    with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -28,6 +49,7 @@ def _normalize_secret_value(value):
 
 
 def load_secrets(env_path=".env"):
+    env_path = str(_resolve_project_path(env_path))
     secrets = {}
     if not os.path.exists(env_path):
         raise FileNotFoundError(

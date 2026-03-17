@@ -16,6 +16,137 @@ def build_output_filename(latest_file, config):
     return os.path.join(output_dir, file_name)
 
 
+def _with_numeric_suffix(file_name, suffix_number):
+    stem, ext = os.path.splitext(file_name)
+    return f"{stem} ({suffix_number}){ext}"
+
+
+def _write_inventory_workbook(df, file_name, review_threshold, col_to_hide, date_cols,
+                              two_decimal_cols, thousands_sep_cols, fill_cols,
+                              base_report, item, item_group, rmd):
+    writer = pd.ExcelWriter(
+        file_name, engine="xlsxwriter",
+        datetime_format="mm/dd/yyyy", date_format="mm/dd/yyyy",
+    )
+
+    with writer:
+        df.to_excel(writer, sheet_name="Full", index=False)
+        workbook = writer.book
+        worksheet = writer.sheets["Full"]
+
+        hdr = {
+            "bold": True, "border": 1,
+            "text_wrap": True, "align": "center", "valign": "vcenter",
+        }
+        fmt_base = workbook.add_format({**hdr, "bg_color": "#94c5e3"})
+        fmt_item = workbook.add_format({**hdr, "bg_color": "#003769", "font_color": "white"})
+        fmt_ig = workbook.add_format({**hdr, "bg_color": "#112b47", "font_color": "white"})
+        fmt_rmd = workbook.add_format({**hdr, "bg_color": "#ca006c", "font_color": "white"})
+
+        fmt_two_dec = workbook.add_format({"num_format": "#,##0.00"})
+        fmt_thousands = workbook.add_format({"num_format": "#,##0"})
+
+        fmt_red = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
+        fmt_green = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
+
+        fmt_fill = workbook.add_format({"align": "fill"})
+        fmt_banded = workbook.add_format({"bg_color": "#F2F2F2"})
+        fmt_border = workbook.add_format({"border": 1, "border_color": "#D3D3D3"})
+
+        worksheet.set_row(0, 45)
+        worksheet.freeze_panes(1, 0)
+
+        worksheet.conditional_format(1, 0, len(df), len(df.columns) - 1, {
+            "type": "formula", "criteria": "=ROW()>0", "format": fmt_border,
+        })
+
+        if "Matched IMDCSTRM" in df.columns:
+            match_idx = df.columns.get_loc("Matched IMDCSTRM")
+            for row_num, value in enumerate(df["Matched IMDCSTRM"]):
+                if value != "Matched":
+                    worksheet.set_row(row_num + 1, None, None, {"hidden": True})
+            worksheet.filter_column(match_idx, "x == Matched")
+
+        for col_num, col_name in enumerate(df.columns):
+            worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
+
+            if col_name in date_cols:
+                worksheet.set_column(col_num, col_num, 12)
+            elif col_name in two_decimal_cols:
+                worksheet.set_column(col_num, col_num, 12, fmt_two_dec)
+            elif col_name in thousands_sep_cols:
+                worksheet.set_column(col_num, col_num, 10, fmt_thousands)
+
+            if col_name in fill_cols:
+                worksheet.set_column(col_num, col_num, 30, fmt_fill)
+
+            if col_name in col_to_hide:
+                worksheet.set_column(col_num, col_num, None, None, {"hidden": True})
+
+            fmt_map = None
+            if col_name in base_report:
+                fmt_map = fmt_base
+            elif col_name in item:
+                fmt_map = fmt_item
+            elif col_name in item_group:
+                fmt_map = fmt_ig
+            elif col_name in rmd:
+                fmt_map = fmt_rmd
+
+            if fmt_map:
+                worksheet.write(0, col_num, col_name, fmt_map)
+
+        worksheet.conditional_format(1, 0, len(df), len(df.columns) - 1, {
+            "type": "formula", "criteria": "=MOD(ROW(),2)=0", "format": fmt_banded,
+        })
+
+        for col_name in ["Get Well - DIOH", "Get Well - DIOH_ig"]:
+            if col_name in df.columns:
+                idx = df.columns.get_loc(col_name)
+                worksheet.conditional_format(1, idx, len(df), idx, {
+                    "type": "blanks", "stop_if_true": True,
+                })
+                worksheet.conditional_format(1, idx, len(df), idx, {
+                    "type": "cell", "criteria": ">=",
+                    "value": review_threshold, "format": fmt_red,
+                })
+                worksheet.conditional_format(1, idx, len(df), idx, {
+                    "type": "cell", "criteria": "<",
+                    "value": review_threshold, "format": fmt_green,
+                })
+
+
+def _save_with_fallback_names(df, file_name, review_threshold, col_to_hide, date_cols,
+                              two_decimal_cols, thousands_sep_cols, fill_cols,
+                              base_report, item, item_group, rmd):
+    candidate = file_name
+    suffix_number = 0
+
+    while True:
+        try:
+            _write_inventory_workbook(
+                df,
+                candidate,
+                review_threshold,
+                col_to_hide,
+                date_cols,
+                two_decimal_cols,
+                thousands_sep_cols,
+                fill_cols,
+                base_report,
+                item,
+                item_group,
+                rmd,
+            )
+            return candidate
+        except PermissionError:
+            if not os.path.exists(candidate):
+                raise
+
+            suffix_number += 1
+            candidate = _with_numeric_suffix(file_name, suffix_number)
+
+
 def _get_column_order(cfg):
     cols = cfg["report"]["columns"]
     return (
@@ -75,106 +206,26 @@ def apply_inventory_styling(df, file_name, config):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # ── write to Excel ──
-    writer = pd.ExcelWriter(
-        file_name, engine="xlsxwriter",
-        datetime_format="mm/dd/yyyy", date_format="mm/dd/yyyy",
+    saved_path = _save_with_fallback_names(
+        df,
+        file_name,
+        review_threshold,
+        col_to_hide,
+        date_cols,
+        two_decimal_cols,
+        thousands_sep_cols,
+        fill_cols,
+        base_report,
+        item,
+        item_group,
+        rmd,
     )
 
-    with writer:
-        df.to_excel(writer, sheet_name="Full", index=False)
-        workbook = writer.book
-        worksheet = writer.sheets["Full"]
+    if saved_path != file_name:
+        print(
+            f"Primary output file was locked. Report saved to alternate path: {saved_path}"
+        )
+    else:
+        print(f"Report saved to {saved_path}")
 
-        # header formats
-        hdr = {
-            "bold": True, "border": 1,
-            "text_wrap": True, "align": "center", "valign": "vcenter",
-        }
-        fmt_base = workbook.add_format({**hdr, "bg_color": "#94c5e3"})
-        fmt_item = workbook.add_format({**hdr, "bg_color": "#003769", "font_color": "white"})
-        fmt_ig = workbook.add_format({**hdr, "bg_color": "#112b47", "font_color": "white"})
-        fmt_rmd = workbook.add_format({**hdr, "bg_color": "#ca006c", "font_color": "white"})
-
-        # number formats
-        fmt_two_dec = workbook.add_format({"num_format": "#,##0.00"})
-        fmt_thousands = workbook.add_format({"num_format": "#,##0"})
-
-        # conditional highlight formats
-        fmt_red = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-        fmt_green = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
-
-        # misc formats
-        fmt_fill = workbook.add_format({"align": "fill"})
-        fmt_banded = workbook.add_format({"bg_color": "#F2F2F2"})
-        fmt_border = workbook.add_format({"border": 1, "border_color": "#D3D3D3"})
-
-        worksheet.set_row(0, 45)
-        worksheet.freeze_panes(1, 0)
-
-        # global border
-        worksheet.conditional_format(1, 0, len(df), len(df.columns) - 1, {
-            "type": "formula", "criteria": "=ROW()>0", "format": fmt_border,
-        })
-
-        # filter on Matched
-        if "Matched IMDCSTRM" in df.columns:
-            match_idx = df.columns.get_loc("Matched IMDCSTRM")
-            for row_num, value in enumerate(df["Matched IMDCSTRM"]):
-                if value != "Matched":
-                    worksheet.set_row(row_num + 1, None, None, {"hidden": True})
-            worksheet.filter_column(match_idx, "x == Matched")
-
-        # per-column formatting
-        for col_num, col_name in enumerate(df.columns):
-            worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
-
-            if col_name in date_cols:
-                worksheet.set_column(col_num, col_num, 12)
-            elif col_name in two_decimal_cols:
-                worksheet.set_column(col_num, col_num, 12, fmt_two_dec)
-            elif col_name in thousands_sep_cols:
-                worksheet.set_column(col_num, col_num, 10, fmt_thousands)
-
-            if col_name in fill_cols:
-                worksheet.set_column(col_num, col_num, 30, fmt_fill)
-
-            if col_name in col_to_hide:
-                worksheet.set_column(col_num, col_num, None, None, {"hidden": True})
-
-            # styled headers
-            fmt_map = None
-            if col_name in base_report:
-                fmt_map = fmt_base
-            elif col_name in item:
-                fmt_map = fmt_item
-            elif col_name in item_group:
-                fmt_map = fmt_ig
-            elif col_name in rmd:
-                fmt_map = fmt_rmd
-
-            if fmt_map:
-                worksheet.write(0, col_num, col_name, fmt_map)
-
-        # banding
-        worksheet.conditional_format(1, 0, len(df), len(df.columns) - 1, {
-            "type": "formula", "criteria": "=MOD(ROW(),2)=0", "format": fmt_banded,
-        })
-
-        # conditional highlighting on Get Well columns
-        for col_name in ["Get Well - DIOH", "Get Well - DIOH_ig"]:
-            if col_name in df.columns:
-                idx = df.columns.get_loc(col_name)
-                worksheet.conditional_format(1, idx, len(df), idx, {
-                    "type": "blanks", "stop_if_true": True,
-                })
-                worksheet.conditional_format(1, idx, len(df), idx, {
-                    "type": "cell", "criteria": ">=",
-                    "value": review_threshold, "format": fmt_red,
-                })
-                worksheet.conditional_format(1, idx, len(df), idx, {
-                    "type": "cell", "criteria": "<",
-                    "value": review_threshold, "format": fmt_green,
-                })
-
-    print(f"Report saved to {file_name}")
+    return saved_path

@@ -136,6 +136,17 @@ After the first setup, normal daily use is simple.
 
 ### Manual run
 
+Preferred option:
+
+```powershell
+cd "your_path_to_this_folder\A13-MedlinePBO"
+.\run_medline_pbo.bat
+```
+
+This batch file always targets the project's own `.venv\Scripts\python.exe`, `main.py`, and `config.yaml` by absolute path derived from the batch file location, so it does not depend on the caller's working directory.
+
+Direct Python option:
+
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
 .\.venv\Scripts\Activate.ps1
@@ -219,7 +230,29 @@ Examples:
 
 ### Step 5: Add the action
 
-Use these values.
+Preferred setup:
+
+Program/script:
+
+```text
+your_path_to_this_folder\A13-MedlinePBO\run_medline_pbo.bat
+```
+
+Add arguments:
+
+```text
+(leave blank)
+```
+
+Start in:
+
+```text
+(optional) your_path_to_this_folder\A13-MedlinePBO
+```
+
+This is the safest option because the batch file builds absolute paths to `.venv\Scripts\python.exe`, `main.py`, and `config.yaml` from its own folder.
+
+Direct Python setup if you do not want to use the batch file:
 
 Program/script:
 
@@ -227,16 +260,10 @@ Program/script:
 your_path_to_this_folder\A13-MedlinePBO\.venv\Scripts\python.exe
 ```
 
-or:
-
-```text
-your_path_to_this_folder\A13-MedlinePBO\venv\Scripts\python.exe
-```
-
 Add arguments:
 
 ```text
-main.py
+"your_path_to_this_folder\A13-MedlinePBO\main.py" --config "your_path_to_this_folder\A13-MedlinePBO\config.yaml"
 ```
 
 Start in:
@@ -244,8 +271,6 @@ Start in:
 ```text
 your_path_to_this_folder\A13-MedlinePBO
 ```
-
-The `Start in` value is important. Do not leave it blank.
 
 ### Step 6: Save the task and test it
 
