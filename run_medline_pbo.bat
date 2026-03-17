@@ -23,5 +23,8 @@ if not exist "%CONFIG_YAML%" (
 
 "%PYTHON_EXE%" "%MAIN_PY%" --config "%CONFIG_YAML%"
 set "EXIT_CODE=%ERRORLEVEL%"
+echo.
+echo Press any key to close this window...
+pause >nul
 
 endlocal & exit /b %EXIT_CODE%
