@@ -29,6 +29,7 @@ from src.msgraph import (
     send_failure_notification,
 )
 from src.transform import (
+    prepare_location_inventory_tables,
     build_ehc,
     build_substitutes,
     merge_inventory,
@@ -158,16 +159,27 @@ def worker_main(config_path="config.yaml", log_path=None):
         print(f"[3/8] Ingestion complete — {row_count} rows.")
 
         # ── 3. Fetch database tables ──
-        location = config["database"]["location"]
+        database_cfg = config["database"]
+        locations = database_cfg.get("locations") or [database_cfg["location"]]
         conn = get_connection(config)
-        tables = fetch_all_tables(conn, location)
+        tables = fetch_all_tables(conn, locations)
         conn.close()
         print("[4/8] Database tables fetched.")
 
         # ── 4. Transform ──
-        df_ehc = build_ehc(tables["inventory"], tables["usage"], tables["long_desc"])
+        prepared_tables = prepare_location_inventory_tables(
+            tables["inventory"], tables["usage"], tables["plmusage"],
+        )
+        df_ehc = build_ehc(
+            prepared_tables["inventory"],
+            prepared_tables["usage"],
+            tables["long_desc"],
+        )
         df_sub = build_substitutes(
-            tables["plmlink"], tables["inventory"], tables["usage"], tables["long_desc"],
+            tables["plmlink"],
+            prepared_tables["inventory"],
+            prepared_tables["usage"],
+            tables["long_desc"],
         )
 
         df_m = merge_inventory(df, df_ehc)
@@ -175,7 +187,7 @@ def worker_main(config_path="config.yaml", log_path=None):
 
         df_msub = merge_substitutes(df_m, df_sub)
         df_ig = aggregate_item_groups(
-            df_msub, tables["plmusage"], report_cfg["review_threshold"],
+            df_msub, prepared_tables["plmusage"], report_cfg["review_threshold"],
         )
         df_full = build_full_dataset(df_msub, df_ig)
 
@@ -187,13 +199,23 @@ def worker_main(config_path="config.yaml", log_path=None):
         df_review_to_merge = apply_uom_alternatives(df_review, medline_cf_df)
 
         timestamp_value = tables["timestamp"].values[0][0]
-        df_output = assemble_output(df_full, df_review_to_merge, timestamp_value)
+        df_output = assemble_output(
+            df_full,
+            df_review_to_merge,
+            timestamp_value,
+            prepared_tables["ipyc_items"],
+        )
         print(f"[5/8] Transformation complete — {len(df_output)} output rows.")
 
         # ── 5. Export styled report ──
         df_output_reordered = reorder_columns(df_output, config)
         output_path = build_output_filename(latest_file, config)
-        output_path = apply_inventory_styling(df_output_reordered, output_path, config)
+        output_path = apply_inventory_styling(
+            df_output_reordered,
+            output_path,
+            config,
+            df_uom_inconsistency=prepared_tables["uom_inconsistency"],
+        )
         print(f"[6/8] Report saved — {output_path}")
 
         # ── 6. Send success email ──

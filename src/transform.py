@@ -10,7 +10,119 @@ import numpy as np
 import pandas as pd
 
 
+INVENTORY_AGGREGATION_KEYS = [
+    "VendorItem",
+    "Item",
+    "DefaultBuyUOM",
+    "BuyUOMMultiplier",
+    "StockUOM",
+]
+
+INVENTORY_CONSISTENCY_COLUMNS = [
+    "StockUOM",
+    "DefaultBuyUOM",
+    "BuyUOMMultiplier",
+]
+
+
 # ── Step 1: build helper tables ─────────────────────────────────────
+
+def prepare_location_inventory_tables(df_inv, df_usage, df_plmusage):
+    """Validate multi-location UOM consistency and build aggregated tables."""
+    ipyc_items = set(df_inv.loc[df_inv["Location"] == "IPYCSTRM", "Item"].dropna())
+
+    inconsistent_keys = _find_inventory_uom_inconsistencies(df_inv)
+    inconsistent_items = {item for _, item in inconsistent_keys}
+    df_uom_inconsistency = _build_uom_inconsistency_frame(df_inv, inconsistent_keys)
+
+    filtered_inventory = df_inv[
+        ~(
+            (df_inv["Location"] == "IPYCSTRM")
+            & (df_inv["Item"].isin(inconsistent_items))
+        )
+    ].copy()
+    filtered_usage = df_usage[
+        ~(
+            (df_usage["Location"] == "IPYCSTRM")
+            & (df_usage["Item"].isin(inconsistent_items))
+        )
+    ].copy()
+
+    aggregated_inventory = _aggregate_inventory(filtered_inventory)
+    aggregated_usage = _aggregate_usage(filtered_usage)
+    aggregated_plmusage = _aggregate_plmusage(df_plmusage)
+
+    return {
+        "inventory": aggregated_inventory,
+        "usage": aggregated_usage,
+        "plmusage": aggregated_plmusage,
+        "uom_inconsistency": df_uom_inconsistency,
+        "ipyc_items": ipyc_items,
+    }
+
+
+def _find_inventory_uom_inconsistencies(df_inv):
+    uom_signatures = (
+        df_inv.groupby(["VendorItem", "Item"])[INVENTORY_CONSISTENCY_COLUMNS]
+        .nunique(dropna=False)
+        .reset_index()
+    )
+    inconsistent = uom_signatures[
+        (uom_signatures[INVENTORY_CONSISTENCY_COLUMNS] > 1).any(axis=1)
+    ]
+    return list(inconsistent[["VendorItem", "Item"]].itertuples(index=False, name=None))
+
+
+def _build_uom_inconsistency_frame(df_inv, inconsistent_keys):
+    cols = [
+        "Location",
+        "VendorItem",
+        "Item",
+        "AvailableQty",
+        "OnOrderQty",
+        "DefaultBuyUOM",
+        "BuyUOMMultiplier",
+        "StockUOM",
+        "report stamp",
+    ]
+    if not inconsistent_keys:
+        return pd.DataFrame(columns=cols)
+
+    key_df = pd.DataFrame(inconsistent_keys, columns=["VendorItem", "Item"])
+    return (
+        df_inv.merge(key_df, on=["VendorItem", "Item"], how="inner")[cols]
+        .sort_values(by=["VendorItem", "Item", "Location"])
+        .reset_index(drop=True)
+    )
+
+
+def _aggregate_inventory(df_inv):
+    aggregated = (
+        df_inv.groupby(INVENTORY_AGGREGATION_KEYS, dropna=False)
+        .agg({
+            "AvailableQty": "sum",
+            "OnOrderQty": "sum",
+            "report stamp": "max",
+        })
+        .reset_index()
+    )
+    return aggregated
+
+
+def _aggregate_usage(df_usage):
+    return (
+        df_usage.groupby("Item", dropna=False)["AverageDailyIssueOut"]
+        .sum()
+        .reset_index()
+    )
+
+
+def _aggregate_plmusage(df_plmusage):
+    return (
+        df_plmusage.groupby("Item Group", dropna=False)["rolling_daily_avg_7"]
+        .sum()
+        .reset_index()
+    )
 
 def build_ehc(df_inv, df_usage, df_long_desc):
     """Inventory enriched with usage rates and long descriptions."""
@@ -86,7 +198,7 @@ def calculate_dioh_metrics(df_m, review_threshold):
     df["Flag"] = df["Get Well - DIOH"].apply(
         lambda x: "Review" if x >= review_threshold else "Okay"
     )
-    df["Matched IMDCSTRM"] = df["_merge"].apply(
+    df["Matched IMDC + IPYC"] = df["_merge"].apply(
         lambda x: "Matched" if x == "both" else "Not Matched"
     )
     df["No Issue Out (Last 365 Days)"] = df[["_merge", "AverageDailyIssueOut"]].apply(
@@ -352,8 +464,11 @@ def apply_uom_alternatives(df_review, medline_cf_df):
 
 # ── Step 8: final assembly ───────────────────────────────────────────
 
-def assemble_output(df_full, df_review_to_merge, timestamp_value):
+def assemble_output(df_full, df_review_to_merge, timestamp_value, ipyc_items):
     """Join review recommendations back and attach the inventory timestamp."""
     df_output = df_full.merge(df_review_to_merge, on="Medline Item", how="left")
     df_output["Inventory Data As Of"] = str(timestamp_value)[:19]
+    df_output["In IPYCSTRM"] = df_output["Item"].apply(
+        lambda item: "Yes" if item in ipyc_items else "No"
+    )
     return df_output

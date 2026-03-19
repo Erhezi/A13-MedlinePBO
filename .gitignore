@@ -34,3 +34,6 @@ Desktop.ini
 
 # original .ipynb
 *.ipynb
+
+# bat files
+*.bat

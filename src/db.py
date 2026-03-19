@@ -13,7 +13,7 @@ def get_connection(config):
     )
 
 
-# SQL templates — {location} is substituted at runtime.
+# SQL templates — {location_filter} is substituted at runtime.
 SQL_TEMPLATES = {
     "inventory": r"""
         SELECT *
@@ -28,7 +28,7 @@ SQL_TEMPLATES = {
                        ORDER BY [report stamp] DESC
                    ) AS RK
             FROM [DM_MONTYNT\dli2].INVENTORY_LOCATION
-            WHERE Location = '{location}'
+            WHERE Location IN ({location_filter})
               AND Active = 'Yes'
               AND Discontinued = 'No'
         ) c
@@ -40,7 +40,7 @@ SQL_TEMPLATES = {
         FROM (
             SELECT *
             FROM plm.DailyIssueOutQty
-            WHERE Location = '{location}'
+            WHERE Location IN ({location_filter})
               AND trx_date BETWEEN DATEADD(DAY, -366, GETDATE()) AND GETDATE()
         ) c
         GROUP BY Location, Item
@@ -57,12 +57,12 @@ SQL_TEMPLATES = {
     "plmusage": """
         SELECT [Item Group], rolling_daily_avg_7
         FROM PLM.PLMItemGroupBRRolling
-        WHERE Location = '{location}'
+        WHERE Location IN ({location_filter})
     """,
     "timestamp": r"""
         SELECT MAX([report stamp]) AS stamp
         FROM [DM_MONTYNT\dli2].INVENTORY_LOCATION
-        WHERE Location = '{location}'
+        WHERE Location IN ({location_filter})
           AND Active = 'Yes'
           AND Discontinued = 'No'
           AND [report stamp] >= DATEADD(DAY, -10, GETDATE())
@@ -70,14 +70,23 @@ SQL_TEMPLATES = {
 }
 
 
-def fetch_all_tables(conn, location):
+def _build_location_filter(locations):
+    escaped_locations = [location.replace("'", "''") for location in locations]
+    return ", ".join(f"'{location}'" for location in escaped_locations)
+
+
+def fetch_all_tables(conn, locations):
     """Execute every SQL template and return a dict of DataFrames.
 
     Keys: inventory, usage, long_desc, plmlink, plmusage, timestamp
     """
+    if isinstance(locations, str):
+        locations = [locations]
+
+    location_filter = _build_location_filter(locations)
     results = {}
     for name, template in SQL_TEMPLATES.items():
-        sql = template.format(location=location)
+        sql = template.format(location_filter=location_filter)
         results[name] = pd.read_sql_query(sql, conn)
     return results
 

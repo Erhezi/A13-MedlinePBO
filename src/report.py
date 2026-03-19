@@ -21,9 +21,21 @@ def _with_numeric_suffix(file_name, suffix_number):
     return f"{stem} ({suffix_number}){ext}"
 
 
+def _write_uom_inconsistency_sheet(workbook, df_uom_inconsistency):
+    df_uom_inconsistency.to_excel(
+        workbook,
+        sheet_name="UOM inconsistency",
+        index=False,
+    )
+    worksheet = workbook.sheets["UOM inconsistency"]
+    worksheet.freeze_panes(1, 0)
+    worksheet.autofilter(0, 0, len(df_uom_inconsistency), len(df_uom_inconsistency.columns) - 1)
+
+
 def _write_inventory_workbook(df, file_name, review_threshold, col_to_hide, date_cols,
                               two_decimal_cols, thousands_sep_cols, fill_cols,
-                              base_report, item, item_group, rmd):
+                              base_report, item, item_group, rmd,
+                              df_uom_inconsistency=None):
     writer = pd.ExcelWriter(
         file_name, engine="xlsxwriter",
         datetime_format="mm/dd/yyyy", date_format="mm/dd/yyyy",
@@ -60,9 +72,9 @@ def _write_inventory_workbook(df, file_name, review_threshold, col_to_hide, date
             "type": "formula", "criteria": "=ROW()>0", "format": fmt_border,
         })
 
-        if "Matched IMDCSTRM" in df.columns:
-            match_idx = df.columns.get_loc("Matched IMDCSTRM")
-            for row_num, value in enumerate(df["Matched IMDCSTRM"]):
+        if "Matched IMDC + IPYC" in df.columns:
+            match_idx = df.columns.get_loc("Matched IMDC + IPYC")
+            for row_num, value in enumerate(df["Matched IMDC + IPYC"]):
                 if value != "Matched":
                     worksheet.set_row(row_num + 1, None, None, {"hidden": True})
             worksheet.filter_column(match_idx, "x == Matched")
@@ -115,10 +127,14 @@ def _write_inventory_workbook(df, file_name, review_threshold, col_to_hide, date
                     "value": review_threshold, "format": fmt_green,
                 })
 
+        if df_uom_inconsistency is not None and not df_uom_inconsistency.empty:
+            _write_uom_inconsistency_sheet(writer, df_uom_inconsistency)
+
 
 def _save_with_fallback_names(df, file_name, review_threshold, col_to_hide, date_cols,
                               two_decimal_cols, thousands_sep_cols, fill_cols,
-                              base_report, item, item_group, rmd):
+                              base_report, item, item_group, rmd,
+                              df_uom_inconsistency=None):
     candidate = file_name
     suffix_number = 0
 
@@ -137,6 +153,7 @@ def _save_with_fallback_names(df, file_name, review_threshold, col_to_hide, date
                 item,
                 item_group,
                 rmd,
+                df_uom_inconsistency,
             )
             return candidate
         except PermissionError:
@@ -174,7 +191,7 @@ def reorder_columns(df, config):
     return df[order].copy()
 
 
-def apply_inventory_styling(df, file_name, config):
+def apply_inventory_styling(df, file_name, config, df_uom_inconsistency=None):
     """Write *df* to an xlsx with full formatting, conditional colours, etc."""
     cfg = config["report"]
     cols = cfg["columns"]
@@ -192,7 +209,7 @@ def apply_inventory_styling(df, file_name, config):
 
     # ── sorting ──
     df = df.sort_values(
-        by=["Matched IMDCSTRM", "Get Well - DIOH", "Get Well - DIOH_ig"],
+        by=["Matched IMDC + IPYC", "Get Well - DIOH", "Get Well - DIOH_ig"],
         ascending=[True, False, False],
         na_position="last",
     )
@@ -219,6 +236,7 @@ def apply_inventory_styling(df, file_name, config):
         item,
         item_group,
         rmd,
+        df_uom_inconsistency,
     )
 
     if saved_path != file_name:
