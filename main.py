@@ -141,7 +141,7 @@ def worker_main(config_path="config.yaml", log_path=None):
             secrets=secrets,
         )
         if save_path is None:
-            raise SystemExit("No attachment found. Aborting.")
+            raise FileNotFoundError("No attachment found. Aborting.")
         source_file_path = save_path
         print(f"[2/8] Excel downloaded: {latest_file}")
 
