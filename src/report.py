@@ -241,9 +241,9 @@ def apply_inventory_styling(df, file_name, config, df_uom_inconsistency=None):
 
     if saved_path != file_name:
         print(
-            f"Primary output file was locked. Report saved to alternate path: {saved_path}"
+            f"Primary output file was locked. Report will be saved to alternate path: {saved_path}"
         )
     else:
-        print(f"Report saved to {saved_path}")
+        print(f"Styling applied, report will be saved to {saved_path}")
 
     return saved_path

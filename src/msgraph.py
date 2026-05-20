@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 
-INBOX_LOOKBACK_HOURS = 48
+INBOX_LOOKBACK_DAYS = 6
 TARGET_ATTACHMENT_PREFIX = "Proactive"
 
 
@@ -182,13 +182,12 @@ def get_latest_excel_attachment(keyword, destination_path, config, secrets):
     headers = {"Authorization": f"Bearer {token}"}
     graph = config["email"]["graph_endpoint"]
     user = config["email"]["from_email"]
-    folder_name = config["email"]["folder_name"]
     max_messages = config["email"].get("max_messages", 100)
 
-    inbox_cutoff = datetime.now(timezone.utc) - timedelta(hours=INBOX_LOOKBACK_HOURS)
+    inbox_cutoff = datetime.now(timezone.utc) - timedelta(days=INBOX_LOOKBACK_DAYS)
     print(
         f"Searching Inbox for subject containing '{keyword}' from the last "
-        f"{INBOX_LOOKBACK_HOURS} hours."
+        f"{INBOX_LOOKBACK_DAYS} days."
     )
     inbox_messages = _list_messages(
         graph,
@@ -210,36 +209,11 @@ def get_latest_excel_attachment(keyword, destination_path, config, secrets):
     if save_path is not None:
         return save_path, file_name
 
-    print(
-        f"No '{TARGET_ATTACHMENT_PREFIX}*.xlsx' attachment found in Inbox. "
-        f"Searching folder '{folder_name}' next."
-    )
-    folder_id = get_folder_id(folder_name, token, config)
-    if folder_id is not None:
-        folder_messages = _list_messages(
-            graph,
-            user,
-            folder_id=folder_id,
-            headers=headers,
-            max_messages=max_messages,
-        )
-        save_path, file_name = _find_matching_attachment(
-            graph,
-            user,
-            headers,
-            folder_messages,
-            destination_path,
-            TARGET_ATTACHMENT_PREFIX,
-        )
-        if save_path is not None:
-            return save_path, file_name
-
     error_message = (
         "Unable to find a matching attachment. "
         f"Inbox search required subject containing '{keyword}' within the last "
-        f"{INBOX_LOOKBACK_HOURS} hours and attachment name starting with "
-        f"'{TARGET_ATTACHMENT_PREFIX}'. Fallback folder '{folder_name}' also "
-        "did not contain a matching attachment in the latest messages."
+        f"{INBOX_LOOKBACK_DAYS} days and attachment name starting with "
+        f"'{TARGET_ATTACHMENT_PREFIX}'."
     )
     print(f"ERROR: {error_message}")
     raise FileNotFoundError(error_message)
