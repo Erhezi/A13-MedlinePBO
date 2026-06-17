@@ -147,7 +147,7 @@ def worker_main(config_path="config.yaml", log_path=None):
 
         # ── 2. Ingest & validate ──
         report_cfg = config["report"]
-        df = read_pbo_file(save_path)
+        df = read_pbo_file(save_path, required_columns=report_cfg["required_columns"])
         validate_columns(df, report_cfg["required_columns"])
         df = apply_jesse_selection(
             df,

@@ -46,26 +46,38 @@ def _write_inventory_workbook(df, file_name, review_threshold, col_to_hide, date
         workbook = writer.book
         worksheet = writer.sheets["Full"]
 
+        base_font = {
+            'font_name': 'Calibri',
+            'font_size': 10
+        }
+
         hdr = {
+            **base_font,
             "bold": True, "border": 1,
             "text_wrap": True, "align": "center", "valign": "vcenter",
         }
+
+        fmt_default = workbook.add_format({**base_font})
+        default_column_width = 8.43
+        worksheet.set_column(0, len(df.columns) - 1, default_column_width, fmt_default)
+
         fmt_base = workbook.add_format({**hdr, "bg_color": "#94c5e3"})
         fmt_item = workbook.add_format({**hdr, "bg_color": "#003769", "font_color": "white"})
         fmt_ig = workbook.add_format({**hdr, "bg_color": "#112b47", "font_color": "white"})
         fmt_rmd = workbook.add_format({**hdr, "bg_color": "#ca006c", "font_color": "white"})
 
-        fmt_two_dec = workbook.add_format({"num_format": "#,##0.00"})
-        fmt_thousands = workbook.add_format({"num_format": "#,##0"})
+        fmt_two_dec = workbook.add_format({**base_font, "num_format": "#,##0.00"})
+        fmt_thousands = workbook.add_format({**base_font, "num_format": "#,##0"})
 
-        fmt_red = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-        fmt_green = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
+        fmt_red = workbook.add_format({**base_font, "bg_color": "#FFC7CE", "font_color": "#9C0006"})
+        fmt_green = workbook.add_format({**base_font, "bg_color": "#C6EFCE", "font_color": "#006100"})
 
-        fmt_fill = workbook.add_format({"align": "fill"})
-        fmt_banded = workbook.add_format({"bg_color": "#F2F2F2"})
-        fmt_border = workbook.add_format({"border": 1, "border_color": "#D3D3D3"})
+        fmt_text = workbook.add_format({**base_font, "align": "left", "valign": "vcenter", "text_wrap": False})
+        fmt_banded = workbook.add_format({**base_font, "bg_color": "#F2F2F2"})
+        fmt_border = workbook.add_format({**base_font, "border": 1, "border_color": "#D3D3D3"})
+        fmt_date = workbook.add_format({**base_font, "num_format": "mm/dd/yyyy"})
 
-        worksheet.set_row(0, 45)
+        worksheet.set_row(0, 85)
         worksheet.freeze_panes(1, 0)
 
         worksheet.conditional_format(1, 0, len(df), len(df.columns) - 1, {
@@ -84,13 +96,21 @@ def _write_inventory_workbook(df, file_name, review_threshold, col_to_hide, date
 
             if col_name in date_cols:
                 worksheet.set_column(col_num, col_num, 12)
+
+                for row_num, value in enumerate(df[col_name], start=1):
+                    if pd.notna(value):
+                        value = pd.to_datetime(value).to_pydatetime()
+                        worksheet.write_datetime(row_num, col_num, value, fmt_date)
+                    else:
+                        worksheet.write_blank(row_num, col_num, None, fmt_date)
+
             elif col_name in two_decimal_cols:
                 worksheet.set_column(col_num, col_num, 12, fmt_two_dec)
             elif col_name in thousands_sep_cols:
                 worksheet.set_column(col_num, col_num, 10, fmt_thousands)
 
             if col_name in fill_cols:
-                worksheet.set_column(col_num, col_num, 30, fmt_fill)
+                worksheet.set_column(col_num, col_num, 30, fmt_text)
 
             if col_name in col_to_hide:
                 worksheet.set_column(col_num, col_num, None, None, {"hidden": True})
@@ -107,6 +127,12 @@ def _write_inventory_workbook(df, file_name, review_threshold, col_to_hide, date
 
             if fmt_map:
                 worksheet.write(0, col_num, col_name, fmt_map)
+        
+        for row_num in range(1, len(df) + 1):
+            for col_num, col_name in enumerate(df.columns):
+                value = df.iloc[row_num - 1, col_num]
+                if pd.isna(value) or value == "":
+                    worksheet.write(row_num, col_num, " ", fmt_default)
 
         worksheet.conditional_format(1, 0, len(df), len(df.columns) - 1, {
             "type": "formula", "criteria": "=MOD(ROW(),2)=0", "format": fmt_banded,

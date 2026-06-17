@@ -7,8 +7,8 @@ email:
   graph_endpoint: "https://graph.microsoft.com"
   from_email: "procurementdatateam@montefiore.org"
   folder_name: "Monte PBO"
-  keyword: "Monte PBO"
-  destination_path: 'I:\Procurement PMO\dli2\Monte PBO\Raw'
+  keyword: "Proactive BackOrder Report"
+  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO\Raw'
   max_messages: 100
 
 database:
@@ -21,7 +21,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.4"
+  version: "1.5"
   # --------------------  new in v1.4 - 2026-03-18 --------------------
   # - Multi-location aggregation: IMDCSTRM + IPYCSTRM combined for inventory
   #   and usage so metrics reflect both sites.
@@ -31,13 +31,21 @@ report:
   # - Reporting: adds a hidden `In IPYCSTRM` flag per Item; writes the
   #   `UOM inconsistency` worksheet only when inconsistencies exist.
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.5 - 2026-06-17 --------------------
+  # - added new columns: "Manufacturer", "SUOM", "IB Code", "IB Note", 
+  #   "Customer Prefered Sub", "Substitute Material Number"
+  # - data source change: Medline is providing direct system automated export
+  #   instead of rep sending manual files (the file header has a timestamp row, 
+  #   so we need to get rid of row 1 when reading the file into dataframe)
+  # - Reporting: column added and shown as base columns
+  # ---------------------------------------------------------------------
   
   review_threshold: -10 # in days
   # basically this means we need to have at least 10 days of coverage by the estimated available date. 
   # it is measured as Days Get Well - DIOH
   # Days Get Well = Est Available Date - Today
   # DIOH = On Hand / Average Daily Issue Out
-  output_dir: 'I:\Procurement PMO\dli2\Monte PBO'
+  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO'
   file_name_split_token: "Levels"
 
   # Jesse selection criteria
@@ -56,6 +64,15 @@ report:
     - "Parent Item"
     - "Duration"
     - "Forecast Qty"
+    - "SoldTo"
+    - "SoldToName"
+    - "Branch"
+    - "Manufacturer" #added in v1.5
+    - "SUOM" #added in v1.5
+    - "IB Code" #added in v1.5
+    - "IB Note" #added in v1.5
+    - "Customer Prefered Sub" #added in v1.5
+    - "Substitute Material Number" #added in v1.5
 
   # ── Column groups (control report layout) ──
   columns:
@@ -64,6 +81,7 @@ report:
       - "Customer Material Number"
       - "Medline Item"
       - "MIOH"
+      - "Manufacturer"
       - "Manufacturer Item"
       - "Material Description"
       - "SoldTo"
@@ -72,6 +90,7 @@ report:
       - "Branch"
       - "On Allocation?"
       - "Packaging String"
+      - "SUOM"
       - "Est Depletion Date"
       - "Est Available Date"
       - "Duration"
@@ -79,6 +98,10 @@ report:
       - "Doc Appointment Date"
       - "Parent Item"
       - "Jesse Selection"
+      - "IB Code"
+      - "IB Note"
+      - "Customer Prefered Sub"
+      - "Substitute Material Number"
       - "Dummy ID"
 
     item:
@@ -184,6 +207,8 @@ report:
     - "Material Description"
     - "Description3"
     - "Description3_Repl."
+    - "IB Code"
+    - "IB Note"
 
 
 # ──────────────────────────────────────────────
@@ -198,23 +223,23 @@ notification:
     # - "RMATIAS@montefiore.org"
   success_cc_recipients:
     # - "mcondoleo@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "abhashem@montefiore.org"
   failure_recipients:
     - "dli2@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging
 # ──────────────────────────────────────────────
 logging:
-  log_dir: 'I:\Procurement PMO\dli2\Monte PBO\Log'
+  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO\Log'
 
 # ──────────────────────────────────────────────
 # Maintenance — monthly cleanup & archiving
 # ──────────────────────────────────────────────
 maintenance:
   cleanup_day_range: [3, 10]  # run when day-of-month is between these (inclusive)
-  output_archive_dir: 'I:\Procurement PMO\dli2\Monte PBO\Archived'
+  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO\Archived'
 
 # ──────────────────────────────────────────────
 # ETL Health — process status tracking

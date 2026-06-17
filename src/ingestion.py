@@ -4,10 +4,14 @@ import numpy as np
 import pandas as pd
 
 
-def read_pbo_file(file_path):
-    """Read the Medline PBO Excel file and deduplicate."""
-    df = pd.read_excel(file_path, engine="calamine", dtype=str)
-    df = df.drop_duplicates()
+def read_pbo_file(file_path, required_columns=None):
+    """Read the Medline PBO Excel file and deduplicate report rows."""
+    df = pd.read_excel(file_path, engine="calamine", dtype=str, skiprows=1)
+    if required_columns is not None:
+        missing = [c for c in required_columns if c not in df.columns]
+        if missing:
+            raise ValueError(f"Validation Failed. Missing columns: {missing}")
+    df = df.drop_duplicates(subset=required_columns)
     return df
 
 
