@@ -52,6 +52,21 @@ def apply_jesse_selection(df, risk_levels, duration_threshold):
 _PKG_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s+([A-Z]+)/([A-Z]+)")
 
 
+def _denominator_matches_suom(denominator, suom):
+    """Guard against truncated packaging strings.
+
+    The 'Packaging String' is sometimes cut off mid-entry, turning a complete
+    ``NN AA/BB`` into something whose denominator ``BB`` is incomplete
+    (e.g. ``25 RL/CS`` truncated to ``25 RL/C``). A valid (possibly truncated)
+    denominator is always a non-empty prefix of the item's *suom*, so:
+
+    - ``25 RL/C``  with SUOM ``CS`` -> ``"CS".startswith("C")``  -> kept
+    - ``25 AA/B``  with SUOM ``CS`` -> ``"CS".startswith("B")``  -> dropped
+    - ``25`` / ``25 R`` (no ``/BB``) never match the pattern, so never reach here
+    """
+    return bool(suom) and bool(denominator) and suom.startswith(denominator)
+
+
 def _extract_pkgstr(row):
     item_id = row["Medline Item"]
     pkg_str = row["Packaging String"]
@@ -59,8 +74,15 @@ def _extract_pkgstr(row):
     if not pkg_str or pd.isna(pkg_str) or not isinstance(pkg_str, str):
         return [(item_id, "", "", "")]
 
-    matches = _PKG_PATTERN.findall(pkg_str)
-    return [(item_id, m[2], m[1], float(m[0])) for m in matches]
+    suom = row["SUOM"]
+    suom = suom.strip().upper() if isinstance(suom, str) else ""
+
+    records = []
+    for factor, uom, denominator in _PKG_PATTERN.findall(pkg_str):
+        if _denominator_matches_suom(denominator, suom):
+            # Emit the full SUOM, not the parsed (possibly truncated) denominator.
+            records.append((item_id, suom, uom, float(factor)))
+    return records
 
 
 def extract_uom_table(df):
@@ -69,7 +91,10 @@ def extract_uom_table(df):
     for _, row in df.iterrows():
         records.extend(_extract_pkgstr(row))
 
-    return pd.DataFrame(
+    uom_df = pd.DataFrame(
         records,
         columns=["Medline Item", "Convert to UOM", "UOM", "Conversion Factor"],
     )
+    # The source data can list the same item more than once, producing
+    # duplicate conversion rows; collapse them.
+    return uom_df.drop_duplicates(ignore_index=True)
