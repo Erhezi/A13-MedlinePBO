@@ -11,7 +11,6 @@ returns the saved output path. It updates ``ctx.source_file_path`` and
 success and failure paths.
 """
 
-import argparse
 import os
 import subprocess
 import sys
@@ -159,14 +158,19 @@ def run_worker(pipeline_fn, config_path, log_path, package_path):
             print(f"Maintenance error (non-fatal): {mnt_exc}")
 
 
-def run_parent(entry_path, config_path, package_path):
-    """Parent process: launch the worker as a subprocess with a hard timeout."""
+def run_parent(entry_path, config_path, package_path, forward_args=()):
+    """Parent process: launch the worker as a subprocess with a hard timeout.
+
+    *forward_args* are inserted into the worker command line (e.g.
+    ``["--report", "medline_pbo"]``) so the child re-selects the same report.
+    """
     start_time = datetime.now()
     config, secrets, resolved_config_path = _load_runtime_config_and_secrets(config_path)
     log_path = _build_log_path(config["logging"]["log_dir"], start_time)
     cmd = [
         sys.executable,
         entry_path,
+        *forward_args,
         "--config",
         resolved_config_path,
         "--worker",
@@ -185,18 +189,3 @@ def run_parent(entry_path, config_path, package_path):
         raise SystemExit(1)
 
     raise SystemExit(completed.returncode)
-
-
-def run(entry_path, pipeline_fn, default_config="config.yaml"):
-    """Entry point used by each report's run_<report>.py script."""
-    parser = argparse.ArgumentParser(description="Report pipeline runner")
-    parser.add_argument("--config", default=default_config, help="Path to YAML config file")
-    parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--log-path", default=None, help=argparse.SUPPRESS)
-    args = parser.parse_args()
-
-    package_path = os.path.abspath(entry_path)
-    if args.worker:
-        run_worker(pipeline_fn, args.config, args.log_path, package_path)
-    else:
-        run_parent(package_path, args.config, package_path)

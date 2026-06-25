@@ -1,27 +1,12 @@
-"""Medline PBO report — entry point.
+"""Convenience entry point — equivalent to `python main.py --report medline_pbo`.
 
-Usage:
-    python run_medline_pbo.py
-    python run_medline_pbo.py --config <path-to-config.yaml>
-
-Scheduled separately from the Allocation report. The shared runner
-(src/runner.py) provides the timeout watchdog, logging, notification,
-ETL-health, and maintenance; the report-specific steps live in
-reports/medline_pbo/pipeline.py.
+Kept so existing launchers/habits keep working; all dispatch logic lives in main.py.
+Any extra arguments (e.g. --config) are forwarded through.
 """
 
-import os
-import warnings
+import sys
 
-from src import runner
-from reports.medline_pbo.pipeline import run as pipeline_run
-
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore", category=FutureWarning)
-
-DEFAULT_CONFIG = os.path.join("reports", "medline_pbo", "config.yaml")
-
+from main import main
 
 if __name__ == "__main__":
-    runner.run(__file__, pipeline_run, default_config=DEFAULT_CONFIG)
+    main(["--report", "medline_pbo", *sys.argv[1:]])
