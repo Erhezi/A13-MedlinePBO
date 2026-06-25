@@ -15,7 +15,7 @@ your_path_to_this_folder\A13-MedlinePBO
 This repo runs **two** report pipelines that share common infrastructure:
 
 - **Medline PBO** — run `python main.py --report medline_pbo`, config `reports/medline_pbo/config.yaml`, launcher `run_medline_pbo.bat` (scheduled Tue/Thu).
-- **Medline Allocation** — run `python main.py --report medline_allocation`, config `reports/medline_allocation/config.yaml`, launcher `run_medline_allocation.bat` (scheduled weekly).
+- **Medline Allocation** — run `python main.py --report medline_allocation`, config `reports/medline_allocation/config.yaml`, launcher `run_medline_allocation.bat` (scheduled Mon–Fri).
 
 Both reports run through the single entry point `main.py`, selected with `--report`. Add `--config <path>` only to override a report's default config.
 

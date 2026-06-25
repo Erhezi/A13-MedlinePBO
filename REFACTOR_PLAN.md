@@ -158,7 +158,7 @@ thresholds.
    `filter_value`.
 7. **Dependencies:** Allocation needs `sqlalchemy` (upserts). Verify it's in `requirements.txt`
    alongside `python-calamine`, `xlsxwriter`. Add if missing.
-8. **Schedules differ:** PBO Tue/Thu; Allocation is weekly (YearWeek + prior-weeks). Each report keeps its
+8. **Schedules differ:** PBO Tue/Thu; Allocation runs Mon–Fri (week-based YearWeek data model with prior-weeks lookback). Each report keeps its
    own `.bat` / scheduled task, both calling `python main.py --report <name>`.
 
 ---

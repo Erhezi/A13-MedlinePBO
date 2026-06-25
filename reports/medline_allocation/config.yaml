@@ -261,5 +261,5 @@ etl_health:
   schema: "MedlineAllocation"
   table: "ETLHealth"
   process_name: "Medline Allocation"
-  process_id: "MEDALLOC_W_DL"
-  process_frequency: "Weekly"
+  process_id: "MEDALLOC_D_DL"
+  process_frequency: "Workdays"
