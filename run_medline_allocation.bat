@@ -3,8 +3,8 @@ setlocal
 
 for %%I in ("%~dp0.") do set "PROJECT_DIR=%%~fI"
 set "PYTHON_EXE=%PROJECT_DIR%\.venv\Scripts\python.exe"
-set "MAIN_PY=%PROJECT_DIR%\run_medline_pbo.py"
-set "CONFIG_YAML=%PROJECT_DIR%\reports\medline_pbo\config.yaml"
+set "MAIN_PY=%PROJECT_DIR%\run_medline_allocation.py"
+set "CONFIG_YAML=%PROJECT_DIR%\reports\medline_allocation\config.yaml"
 
 if not exist "%PYTHON_EXE%" (
     echo ERROR: Python executable not found at "%PYTHON_EXE%".
@@ -12,7 +12,7 @@ if not exist "%PYTHON_EXE%" (
 )
 
 if not exist "%MAIN_PY%" (
-    echo ERROR: main.py not found at "%MAIN_PY%".
+    echo ERROR: run_medline_allocation.py not found at "%MAIN_PY%".
     exit /b 1
 )
 

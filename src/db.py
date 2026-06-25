@@ -1,9 +1,17 @@
+"""Database connections, table fetching, and ETL-health logging.
+
+Report-agnostic. SQL templates live in ``src/queries.py`` (shared base) and in
+each report's own ``queries.py`` (report-specific additions).
+"""
+
 import pandas as pd
 import pyodbc
 
+from src.queries import BASE_TEMPLATES
+
 
 def get_connection(config):
-    """Open a pyodbc connection using settings from config['database']."""
+    """Open a pyodbc connection to the main PRIME database (config['database'])."""
     db = config["database"]
     return pyodbc.connect(
         driver=db["driver"],
@@ -13,61 +21,35 @@ def get_connection(config):
     )
 
 
-# SQL templates — {location_filter} is substituted at runtime.
-SQL_TEMPLATES = {
-    "inventory": r"""
-        SELECT *
-        FROM (
-            SELECT Location, Item, ItemDescription, Active, Discontinued,
-                   VendorItem, Vendor, VendorName,
-                   ManufacturerNumber, StrippedManufacturerNumber, ManufacturerName,
-                   StockUOM, DefaultBuyUOM, BuyUOMMultiplier, UnitCostInStockUOM,
-                   AvailableQty, OnOrderQty, [update stamp], [report stamp],
-                   ROW_NUMBER() OVER (
-                       PARTITION BY [Location], Item
-                       ORDER BY [report stamp] DESC
-                   ) AS RK
-            FROM [DM_MONTYNT\dli2].INVENTORY_LOCATION
-            WHERE Location IN ({location_filter})
-              AND Active = 'Yes'
-              AND Discontinued = 'No'
-        ) c
-        WHERE RK = 1
-    """,
-    "usage": """
-        SELECT Location, Item,
-               SUM(QtyInLum) * 1.0 / 365 AS AverageDailyIssueOut
-        FROM (
-            SELECT *
-            FROM plm.DailyIssueOutQty
-            WHERE Location IN ({location_filter})
-              AND trx_date BETWEEN DATEADD(DAY, -366, GETDATE()) AND GETDATE()
-        ) c
-        GROUP BY Location, Item
-    """,
-    "long_desc": r"""
-        SELECT Item, Description3
-        FROM [DM_MONTYNT\dli2].MDM_ITEM
-    """,
-    "plmlink": """
-        SELECT [Item Group], Item, [Replace Item], [Stage]
-        FROM plm.Itemlink
-        WHERE Stage NOT IN ('Deleted', 'Completed', 'Pending Item Number')
-    """,
-    "plmusage": """
-        SELECT [Item Group], rolling_daily_avg_7
-        FROM PLM.PLMItemGroupBRRolling
-        WHERE Location IN ({location_filter})
-    """,
-    "timestamp": r"""
-        SELECT MAX([report stamp]) AS stamp
-        FROM [DM_MONTYNT\dli2].INVENTORY_LOCATION
-        WHERE Location IN ({location_filter})
-          AND Active = 'Yes'
-          AND Discontinued = 'No'
-          AND [report stamp] >= DATEADD(DAY, -10, GETDATE())
-    """,
-}
+def get_scs_connection(config):
+    """Open a pyodbc connection to the SCSFileIngestor server (config['etl_health']).
+
+    The same server hosts ETL-health tracking and report-specific helper tables
+    (e.g. MedlineAllocation.WeeklyAllocHelper).
+    """
+    etl = config["etl_health"]
+    return pyodbc.connect(
+        driver=etl["driver"],
+        server=etl["server"],
+        database=etl["database"],
+        trusted_connection=etl["trusted_connection"],
+    )
+
+
+def get_scs_engine(config):
+    """Return a SQLAlchemy engine for the SCSFileIngestor server.
+
+    Used by reports that upsert into their own helper tables.
+    """
+    from sqlalchemy import create_engine
+
+    etl = config["etl_health"]
+    driver = etl["driver"].strip("{}").replace(" ", "+")
+    url = (
+        f"mssql+pyodbc://{etl['server']}/{etl['database']}"
+        f"?driver={driver}&trusted_connection={etl['trusted_connection']}"
+    )
+    return create_engine(url, fast_executemany=True)
 
 
 def _build_location_filter(locations):
@@ -75,17 +57,18 @@ def _build_location_filter(locations):
     return ", ".join(f"'{location}'" for location in escaped_locations)
 
 
-def fetch_all_tables(conn, locations):
-    """Execute every SQL template and return a dict of DataFrames.
+def fetch_tables(conn, locations, templates=BASE_TEMPLATES):
+    """Execute every SQL template and return a dict of DataFrames keyed by name.
 
-    Keys: inventory, usage, long_desc, plmlink, plmusage, timestamp
+    ``templates`` defaults to the shared ``BASE_TEMPLATES``; a report passes its
+    own dict (base + extras) to fetch additional tables in one call.
     """
     if isinstance(locations, str):
         locations = [locations]
 
     location_filter = _build_location_filter(locations)
     results = {}
-    for name, template in SQL_TEMPLATES.items():
+    for name, template in templates.items():
         sql = template.format(location_filter=location_filter)
         results[name] = pd.read_sql_query(sql, conn)
     return results
@@ -106,7 +89,7 @@ def insert_etl_health(
     log_file_path,
     error_message,
 ):
-    """Insert a row into [MedlinePBO].[ETLHealth] on the ETL-health server.
+    """Insert a row into [<schema>].[<table>] on the ETL-health server.
 
     Uses a *separate* connection from the main PRIME database.
     """

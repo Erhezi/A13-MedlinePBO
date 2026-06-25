@@ -32,13 +32,17 @@ def cleanup_old_logs(config):
 
 
 def archive_old_outputs(config):
-    """Move Processed_Monte_PBO*.xlsx older than this month to the archive."""
+    """Move output files older than this month to the archive.
+
+    The filename glob is report-specific (``maintenance.output_glob``).
+    """
     output_dir = config["report"]["output_dir"]
     archive_dir = config["maintenance"]["output_archive_dir"]
+    output_glob = config["maintenance"].get("output_glob", "Processed_Monte_PBO*.xlsx")
     cutoff = _first_of_month()
 
     os.makedirs(archive_dir, exist_ok=True)
-    pattern = os.path.join(output_dir, "Processed_Monte_PBO*.xlsx")
+    pattern = os.path.join(output_dir, output_glob)
     moved = 0
     for path in glob.glob(pattern):
         if os.path.getmtime(path) < cutoff:

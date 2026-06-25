@@ -5,8 +5,10 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 
-INBOX_LOOKBACK_DAYS = 6
-TARGET_ATTACHMENT_PREFIX = "Proactive"
+# Fallbacks used only when a report's config omits the key.
+DEFAULT_INBOX_LOOKBACK_DAYS = 6
+DEFAULT_ATTACHMENT_PREFIX = ""
+DEFAULT_ATTACHMENT_EXTENSIONS = (".xlsx",)
 
 
 def _raise_for_status_with_details(response, context):
@@ -112,12 +114,12 @@ def _list_messages(
     return messages
 
 
-def _is_target_attachment(attachment, attachment_prefix):
-    file_name = attachment.get("name", "")
+def _is_target_attachment(attachment, attachment_prefix, extensions):
+    file_name = attachment.get("name", "").lower()
     return (
         attachment.get("@odata.type") == "#microsoft.graph.fileAttachment"
-        and file_name.lower().endswith(".xlsx")
-        and file_name.lower().startswith(attachment_prefix.lower())
+        and any(file_name.endswith(ext.lower()) for ext in extensions)
+        and file_name.startswith(attachment_prefix.lower())
     )
 
 
@@ -141,6 +143,7 @@ def _find_matching_attachment(
     messages,
     destination_path,
     attachment_prefix,
+    extensions,
 ):
     for message in messages:
         print(
@@ -156,7 +159,7 @@ def _find_matching_attachment(
         attachments = attach_resp.json().get("value", [])
 
         for attachment in attachments:
-            if _is_target_attachment(attachment, attachment_prefix):
+            if _is_target_attachment(attachment, attachment_prefix, extensions):
                 print(
                     "Target Found: "
                     f"{message.get('subject', '')} ({message['receivedDateTime']})"
@@ -167,7 +170,11 @@ def _find_matching_attachment(
 
 
 def get_latest_excel_attachment(keyword, destination_path, config, secrets):
-    """Download the newest Proactive .xlsx attachment from Graph mail.
+    """Download the newest matching Excel attachment from Graph mail.
+
+    Matching is config-driven (``config['email']``): ``attachment_prefix`` and
+    ``attachment_extensions`` constrain the file name; ``inbox_lookback_days``
+    (or null for no limit) constrains how far back to search.
 
     Returns
     -------
@@ -176,19 +183,26 @@ def get_latest_excel_attachment(keyword, destination_path, config, secrets):
     Raises
     ------
     FileNotFoundError
-        If no matching attachment is found in either Inbox or the fallback folder.
+        If no matching attachment is found in the Inbox.
     """
+    email_cfg = config["email"]
     token = get_access_token(secrets, config)
     headers = {"Authorization": f"Bearer {token}"}
-    graph = config["email"]["graph_endpoint"]
-    user = config["email"]["from_email"]
-    max_messages = config["email"].get("max_messages", 100)
-
-    inbox_cutoff = datetime.now(timezone.utc) - timedelta(days=INBOX_LOOKBACK_DAYS)
-    print(
-        f"Searching Inbox for subject containing '{keyword}' from the last "
-        f"{INBOX_LOOKBACK_DAYS} days."
+    graph = email_cfg["graph_endpoint"]
+    user = email_cfg["from_email"]
+    max_messages = email_cfg.get("max_messages", 100)
+    attachment_prefix = email_cfg.get("attachment_prefix", DEFAULT_ATTACHMENT_PREFIX)
+    extensions = email_cfg.get(
+        "attachment_extensions", list(DEFAULT_ATTACHMENT_EXTENSIONS)
     )
+    lookback_days = email_cfg.get("inbox_lookback_days", DEFAULT_INBOX_LOOKBACK_DAYS)
+
+    inbox_cutoff = None
+    lookback_note = "all messages"
+    if lookback_days is not None:
+        inbox_cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        lookback_note = f"the last {lookback_days} days"
+    print(f"Searching Inbox for subject containing '{keyword}' from {lookback_note}.")
     inbox_messages = _list_messages(
         graph,
         user,
@@ -204,16 +218,17 @@ def get_latest_excel_attachment(keyword, destination_path, config, secrets):
         headers,
         inbox_messages,
         destination_path,
-        TARGET_ATTACHMENT_PREFIX,
+        attachment_prefix,
+        extensions,
     )
     if save_path is not None:
         return save_path, file_name
 
     error_message = (
         "Unable to find a matching attachment. "
-        f"Inbox search required subject containing '{keyword}' within the last "
-        f"{INBOX_LOOKBACK_DAYS} days and attachment name starting with "
-        f"'{TARGET_ATTACHMENT_PREFIX}'."
+        f"Inbox search required subject containing '{keyword}' within {lookback_note} "
+        f"and attachment name starting with '{attachment_prefix}' and ending with "
+        f"one of {extensions}."
     )
     print(f"ERROR: {error_message}")
     raise FileNotFoundError(error_message)
@@ -285,15 +300,23 @@ def send_email_with_attachment(
 
 
 def send_success_notification(config, secrets, output_path):
-    """Notify success recipients with the output Excel attached."""
-    recipients = config["notification"]["success_recipients"]
-    cc_recipients = config["notification"].get("success_cc_recipients", [])
+    """Notify success recipients with the output Excel attached.
+
+    Skips silently when no success recipients are configured.
+    """
+    notification = config["notification"]
+    recipients = notification.get("success_recipients", [])
+    if not recipients:
+        print("No success recipients configured — skipping success notification.")
+        return
+    report_name = notification.get("report_name", "Report")
+    cc_recipients = notification.get("success_cc_recipients", [])
     send_email_with_attachment(
         config,
         secrets,
         recipients,
-        subject="Medline PBO Report — Success",
-        body_text="The Medline PBO report is analyzed and enriched.",
+        subject=f"{report_name} Report — Success",
+        body_text=f"The {report_name} report is analyzed and enriched.",
         attachment_path=output_path,
         cc_recipients=cc_recipients,
     )
@@ -301,14 +324,19 @@ def send_success_notification(config, secrets, output_path):
 
 def send_failure_notification(config, secrets, log_path):
     """Notify failure recipients with the error log attached."""
-    recipients = config["notification"]["failure_recipients"]
+    notification = config["notification"]
+    recipients = notification.get("failure_recipients", [])
+    if not recipients:
+        print("No failure recipients configured — skipping failure notification.")
+        return
+    report_name = notification.get("report_name", "Report")
     send_email_with_attachment(
         config,
         secrets,
         recipients,
-        subject="Medline PBO Report — Failed",
+        subject=f"{report_name} Report — Failed",
         body_text=(
-            "The Medline PBO report encountered an error. "
+            f"The {report_name} report encountered an error. "
             "Please see the attached log for details."
         ),
         attachment_path=log_path,
