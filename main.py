@@ -3,7 +3,10 @@
 Usage:
     python main.py --report medline_pbo
     python main.py --report medline_allocation
+
+    if need to override the default config path, use --config:
     python main.py --report medline_pbo --config <path-to-config.yaml>
+    python main.py --report medline_allocation --config <path-to-config.yaml>
 
 The shared runner (src/runner.py) provides the timeout watchdog, logging,
 notification, ETL-health, and maintenance. Each report's own steps live in

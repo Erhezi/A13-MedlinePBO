@@ -10,7 +10,7 @@ report logic interactively:
 
 - `src/` — shared infrastructure (config, secrets, logging, email, db, styler, runner)
 - `reports/medline_pbo/` and `reports/medline_allocation/` — report-specific steps
-- `run_medline_pbo.py` and `run_medline_allocation.py` — entry points
+- `main.py` — single entry point (`python main.py --report medline_pbo` or `--report medline_allocation`)
 
 The notebooks are kept here for reference and future experimentation only. The
 production code has been refactored and **may diverge** from these notebooks as

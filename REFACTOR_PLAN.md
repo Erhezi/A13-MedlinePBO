@@ -202,8 +202,9 @@ thresholds.
 
 ## 7. Decisions (resolved 2026-06-24)
 1. **Keep `src/`** as the shared package name (no rename to `pbo_core/`).
-2. **No registry/dispatcher** — two separate entry scripts (`run_medline_pbo.py`,
-   `run_medline_allocation.py`), scheduled independently. (`main.py` → `run_medline_pbo.py`.)
+2. **Single `main.py --report` dispatcher** (revised from the initial two-entry-scripts
+   plan): `python main.py --report medline_pbo|medline_allocation`, scheduled independently
+   per report. The standalone `run_*.py` shims were removed.
 3. **Allocation gets the full treatment**: its own failure notification, ETL-health log,
    **and** success notification (report emailed; recipient list copied from PBO). Its
    folder tree mirrors Monte PBO under `\\…\dli2\Medline Allocation`.
@@ -222,7 +223,9 @@ What actually got built, and where it deviates from §1–§6 above:
   8-step worker body), `config.yaml` (moved + new styler/msgraph/maintenance keys at current values).
 - **`reports/medline_allocation/`**: `config.yaml`, `queries.py`, `weeks.py`, `ingestion.py`,
   `persistence.py` (the two upserts), `transform.py`, `pipeline.py` — ported from the notebook.
-- **Entry scripts**: `run_medline_pbo.py`, `run_medline_allocation.py`; `.bat` launchers updated/added.
+- **Entry point**: `main.py` with `--report {medline_pbo|medline_allocation}` (REGISTRY →
+  default config + pipeline fn); the runner forwards `--report` into its worker subprocess.
+  `.bat` launchers call `main.py --report <name>`.
 - **Deps**: `SQLAlchemy` (+`greenlet`) added to `requirements.txt` for the Allocation upserts.
 
 **Deviation from the plan — no shared `inventory.py`.** Deeper reading showed the two transform
@@ -238,7 +241,7 @@ wiring through the styler for both reports; PBO output filename reproduced exact
 (`Processed_Medline_Product_Allocation (v1.3)-…`); and a synthetic end-to-end styler run for both
 configs produced valid workbooks (PBO `Full`+`UOM inconsistency`; Allocation `Full`).
 
-**Still requires a live run (Phase 1 gate):** confirm `python run_medline_pbo.py` produces a report
+**Still requires a live run (Phase 1 gate):** confirm `python main.py --report medline_pbo` produces a report
 **byte-identical** to a pre-refactor baseline before relying on it in production. Also create the
 `[MedlineAllocation].[ETLHealth]` table (same shape as `[MedlinePBO].[ETLHealth]`) and rotate the
 Microsoft Graph client secret (it was never committed to git, but lived in a OneDrive-synced notebook).
