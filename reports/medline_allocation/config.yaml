@@ -1,0 +1,279 @@
+# ──────────────────────────────────────────────
+# Medline Allocation Pipeline — Configuration
+# ──────────────────────────────────────────────
+
+email:
+  aad_endpoint: "https://login.microsoftonline.com"
+  graph_endpoint: "https://graph.microsoft.com"
+  from_email: "procurementdatateam@montefiore.org"
+  keyword: "Product Allocation Report"
+  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation\Raw'
+  max_messages: 100
+  # Attachment matching (consumed by src/msgraph.py).
+  # The export is a .xls with no fixed name prefix, so match any Excel file.
+  attachment_prefix: ""
+  attachment_extensions: [".xls", ".xlsx"]
+  inbox_lookback_days: null   # null = no date cutoff (search the top max_messages)
+
+database:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: "MISCPrdAdhocDB"
+  database: "PRIME"
+  trusted_connection: "yes"
+  locations:
+    - "IMDCSTRM"
+    - "IPYCSTRM"
+
+report:
+  version: "1.3"
+  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation'
+  file_name_split_token: "Report"
+  output_basename: "Processed_Medline_Product_Allocation"
+
+  # ── selection / calculation parameters ──
+  c_group: "C1605"
+  target_dioh: 21               # final DIOH (incl. substitutes) below this -> "Review"
+  lost_alloc_lookback_weeks: 3  # read this many prior weeks of helper data for risk-of-loss
+
+  required_columns:  # for the input file
+    - "SoldTo #"
+    - "SoldTo Name"
+    - "Material #"
+    - "Material Text"
+    - "Customer Material #"
+    - "SalesUOM Code"
+    - "Material Qty"
+    - "Allocation Period Start Dt"
+    - "Allocation Period End Dt"
+    - "Weekly Allocation Qty"
+    - "C Group"
+    - "Qty available to order"
+    - "Manufacturer Name"
+    - "Manufacturer Item #"
+    - "Allocation Qty"
+    - "Ordered Qty"
+    - "UNSPSC Level 3 Number"
+    - "UNSPSC Level 3 Name"
+
+  int_cols:  # coerced to int during ingestion
+    - "Material Qty"
+    - "Weekly Allocation Qty"
+    - "Qty available to order"
+    - "Allocation Qty"
+    - "Ordered Qty"
+
+  # ── Column groups (control report layout) ──
+  columns:
+    base_report:
+      - "SoldTo #"
+      - "SoldTo Name"
+      - "Material #"
+      - "Material Text"
+      - "Customer Material #"
+      - "SalesUOM Code"
+      - "Material Qty"
+      - "Allocation Period Start Dt"
+      - "Allocation Period End Dt"
+      - "Weekly Allocation Qty"
+      - "Ordered Qty"
+      - "C Group"
+      - "Qty available to order"
+      - "Manufacturer Name"
+      - "Manufacturer Item #"
+      - "UNSPSC Level 3 Number"
+      - "UNSPSC Level 3 Name"
+      - "Jesse Selection"
+      - "Dummy ID"
+
+    base_report_derived:
+      - "YearWeek"
+      - "Risk of Loss Qty (in SalesUOM, by MPN)"
+      - "Risk of Loss Qty (EA, by MPN)"
+      - "Weekly Allocation Qty (EA, by MPN)"
+      - "Qty available to order (EA, by MPN)"
+
+    item:
+      - "Matched IMDC + IPYC"
+      - "In IPYCSTRM"
+      - "No Issue Out (Last 365 Days)"
+      - "DIOH_final"
+      - "Item"
+      - "VendorItem"
+      - "AvailableQty"
+      - "OnOrderQty"
+      - "DefaultBuyUOM"
+      - "BuyUOMMultiplier"
+      - "StockUOM"
+      - "AverageDailyIssueOut"
+      - "DIOH"
+      - "Flag"
+      - "Description3"
+
+    item_group:
+      - "With Sub"
+      - "Item Group"
+      - "Replace Item"
+      - "AvailableQty_Repl."
+      - "OnOrderQty_Repl."
+      - "DefaultBuyUOM_Repl."
+      - "BuyUOMMultiplier_Repl."
+      - "StockUOM_Repl."
+      - "Description3_Repl."
+      - "AvailableQty_ig"
+      - "AverageDailyIssueOut_ig"
+      - "DIOH_ig"
+
+    rmd:
+      - "Recommended Order Qty (EA)"
+      - "Recommended Order Qty (in BuyUOM)"
+      - "Recomended Order Qty (in BuyUOM)_Repl."
+      - "Recommended Order Qty with Allocation (EA)"
+      - "Recommended Order Qty with Allocation (in BuyUOM)"
+      - "Recommended Order Qty with Allocation (in BuyUOM)_Repl."
+
+    rmd_debug:
+      - "Min DIOH"
+
+    stamp:
+      - "Inventory Data As Of"
+
+  # ── Columns to hide in the final Excel (rmd_debug + stamp appended via hide_groups) ──
+  col_to_hide:
+    - "Jesse Selection"
+    - "UNSPSC Level 3 Number"
+    - "UNSPSC Level 3 Name"
+    - "Dummy ID"
+    - "No Issue Out (Last 365 Days)"
+    - "VendorItem"
+    - "Flag"
+    - "VendorItem_Repl."
+
+  # ── Formatting groups ──
+  date_cols:
+    - "Allocation Period Start Dt"
+    - "Allocation Period End Dt"
+
+  two_decimal_cols:
+    - "AverageDailyIssueOut"
+    - "AverageDailyIssueOut_ig"
+
+  thousands_sep_cols:
+    - "AvailableQty"
+    - "OnOrderQty"
+    - "BuyUOMMultiplier"
+    - "AvailableQty_Repl."
+    - "AvailableQty_ig"
+    - "OnOrderQty_Repl."
+    - "BuyUOMMultiplier_Repl."
+    - "Recommended Order Qty (EA)"
+    - "Recommended Order Qty (in BuyUOM)"
+    - "Recomended Order Qty (in BuyUOM)_Repl."
+    - "Recommended Order Qty with Allocation (EA)"
+    - "Recommended Order Qty with Allocation (in BuyUOM)"
+    - "Recommended Order Qty with Allocation (in BuyUOM)_Repl."
+    - "DIOH_final"
+    - "DIOH"
+    - "DIOH_ig"
+    - "Weekly Allocation Qty"
+    - "Ordered Qty"
+    - "Material Qty"
+    - "Qty available to order"
+    - "Weekly Allocation Qty (EA, by MPN)"
+    - "Qty available to order (EA, by MPN)"
+    - "Risk of Loss Qty (EA, by MPN)"
+    - "Risk of Loss Qty (in SalesUOM, by MPN)"
+
+  fill_cols:
+    - "Material Text"
+    - "Description3"
+    - "Description3_Repl."
+    - "SoldTo Name"
+    - "Manufacturer Name"
+
+  # ── styler (consumed by src/excel.py) ──
+  font: { name: "Arial", size: 8 }
+  header_row_height: 65
+  default_col_width: 12
+  column_order: ["base_report", "base_report_derived", "item", "item_group", "rmd", "rmd_debug", "stamp"]
+  hide_groups: ["rmd_debug", "stamp"]
+  header_colors:
+    base_report: { bg: "#94c5e3" }
+    base_report_derived: { bg: "#B7D9ED" }
+    item: { bg: "#003769", font: "white" }
+    item_group: { bg: "#112b47", font: "white" }
+    rmd: { bg: "#ca006c", font: "white" }
+  sort_by: ["Dummy ID"]
+  sort_ascending: [true]
+  # Only the current YearWeek stays visible; the value is supplied at runtime.
+  row_filter: { column: "YearWeek" }
+  highlight:
+    driver_col: "Jesse Selection"
+    driver_value: "x"
+    target_cols:
+      - "Allocation Period Start Dt"
+      - "Allocation Period End Dt"
+      - "Qty available to order"
+      - "YearWeek"
+
+# ──────────────────────────────────────────────
+# Notification — email recipients (copied from Medline PBO)
+# ──────────────────────────────────────────────
+notification:
+  report_name: "Medline Allocation"
+  success_recipients:
+    - "dli2@montefiore.org"
+    # - "kmaral@montefiore.org"
+    # - "wmcelwaine@montefiore.org"
+    # - "josdanie@montefiore.org"
+    # - "RMATIAS@montefiore.org"
+  success_cc_recipients:
+    # - "mcondoleo@montefiore.org"
+    # - "abhashem@montefiore.org"
+  failure_recipients:
+    - "dli2@montefiore.org"
+    # - "abhashem@montefiore.org"
+
+# ──────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────
+logging:
+  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation\Log'
+
+# ──────────────────────────────────────────────
+# Maintenance — monthly cleanup & archiving
+# ──────────────────────────────────────────────
+maintenance:
+  cleanup_day_range: [3, 10]
+  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation\Archived'
+  output_glob: "Processed_Medline_Product_Allocation*.xlsx"
+
+# ──────────────────────────────────────────────
+# ETL Health — process status tracking
+#   NOTE: requires a [MedlineReport].[ETLHealth] table (same shape as
+#   [MedlinePBO].[ETLHealth]).
+# ──────────────────────────────────────────────
+etl_health:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineReport"
+  table: "ETLHealth"
+  process_name: "Medline Allocation"
+  process_id: "MEDALLOC_D_DL"
+  process_frequency: "Workdays"
+
+# ──────────────────────────────────────────────
+# Persistence — weekly allocation helper tables
+#   The report upserts the current week here, then reads prior weeks back for
+#   risk-of-loss. Same server as etl_health today, but a separate block so it can
+#   move to a different DB later — the schema + table names stay the same.
+# ──────────────────────────────────────────────
+persistence:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineAllocation"
+  tracking_table: "WeeklyAllocHelper"   # current-week tracking + risk-of-loss history
+  unspsc_table: "WeeklyAllocUNSPSC"      # manufacturer / UNSPSC reference

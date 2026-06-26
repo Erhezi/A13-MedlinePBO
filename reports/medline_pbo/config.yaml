@@ -10,6 +10,10 @@ email:
   keyword: "Proactive BackOrder Report"
   destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO\Raw'
   max_messages: 100
+  # Attachment matching (consumed by src/msgraph.py)
+  attachment_prefix: "Proactive"
+  attachment_extensions: [".xlsx"]
+  inbox_lookback_days: 6
 
 database:
   driver: "{ODBC Driver 17 for SQL Server}"
@@ -47,6 +51,25 @@ report:
   # DIOH = On Hand / Average Daily Issue Out
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO'
   file_name_split_token: "Levels"
+  output_basename: "Processed_Monte_PBO"
+
+  # ── styler (consumed by src/excel.py) ──
+  font: { name: "Calibri", size: 10 }
+  header_row_height: 85
+  default_col_width: 8.43
+  column_order: ["base_report", "item", "item_group", "rmd", "rmd_debug", "stamp"]
+  hide_groups: ["rmd_debug", "stamp"]
+  header_colors:
+    base_report: { bg: "#94c5e3" }
+    item: { bg: "#003769", font: "white" }
+    item_group: { bg: "#112b47", font: "white" }
+    rmd: { bg: "#ca006c", font: "white" }
+  sort_by: ["Matched IMDC + IPYC", "Get Well - DIOH", "Get Well - DIOH_ig"]
+  sort_ascending: [true, false, false]
+  row_filter: { column: "Matched IMDC + IPYC", value: "Matched" }
+  conditional_color:
+    columns: ["Get Well - DIOH", "Get Well - DIOH_ig"]
+    threshold_key: "review_threshold"
 
   # Jesse selection criteria
   risk_levels: ["High", "Severe"]
@@ -209,18 +232,19 @@ report:
 # Notification — email recipients
 # ──────────────────────────────────────────────
 notification:
+  report_name: "Medline PBO"
   success_recipients:
     - "dli2@montefiore.org"
-    - "kmaral@montefiore.org"
-    - "wmcelwaine@montefiore.org"
-    - "josdanie@montefiore.org"
-    - "RMATIAS@montefiore.org"
+    # - "kmaral@montefiore.org"
+    # - "wmcelwaine@montefiore.org"
+    # - "josdanie@montefiore.org"
+    # - "RMATIAS@montefiore.org"
   success_cc_recipients:
-    - "mcondoleo@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "mcondoleo@montefiore.org"
+    # - "abhashem@montefiore.org"
   failure_recipients:
     - "dli2@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging
@@ -234,6 +258,7 @@ logging:
 maintenance:
   cleanup_day_range: [3, 10]  # run when day-of-month is between these (inclusive)
   output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO\Archived'
+  output_glob: "Processed_Monte_PBO*.xlsx"
 
 # ──────────────────────────────────────────────
 # ETL Health — process status tracking
@@ -243,7 +268,7 @@ etl_health:
   server: 'YNBBSTVWP02\PROCDATASRVPROD'
   database: "SCSFileIngestor"
   trusted_connection: "yes"
-  schema: "MedlinePBO"
+  schema: "MedlineReport"
   table: "ETLHealth"
   process_name: "Medline PBO"
   process_id: "MEDPBO_W_DL"

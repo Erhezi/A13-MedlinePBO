@@ -10,11 +10,22 @@ The root folder in the examples below is:
 your_path_to_this_folder\A13-MedlinePBO
 ```
 
+## Project Layout — Two Reports
+
+This repo runs **two** report pipelines that share common infrastructure:
+
+- **Medline PBO** — run `python main.py --report medline_pbo`, config `reports/medline_pbo/config.yaml`, launcher `run_medline_pbo.bat` (scheduled Tue/Thu).
+- **Medline Allocation** — run `python main.py --report medline_allocation`, config `reports/medline_allocation/config.yaml`, launcher `run_medline_allocation.bat` (scheduled Mon–Fri).
+
+Both reports run through the single entry point `main.py`, selected with `--report`. Add `--config <path>` only to override a report's default config.
+
+Shared code lives in `src/` (config, secrets, logging, email/Graph, database, the Excel styler, and the run harness). Each report's own steps live in `reports/<report>/`. The original prototyping notebooks are kept (reference only) under `notebook/`. Everything below uses the PBO report as the example; the Allocation report works identically — just swap in its entry script, config, and `.bat`.
+
 ## What This Script Does
 
-When `main.py` runs, it:
+When `main.py --report medline_pbo` runs, it:
 
-1. Reads settings from `config.yaml`.
+1. Reads settings from its config (`reports/medline_pbo/config.yaml`).
 2. Reads secrets from `.env`.
 3. Decrypts the Microsoft Graph client secret using the passphrase stored in Windows.
 4. Downloads the latest Medline file from email.
@@ -26,12 +37,12 @@ When `main.py` runs, it:
 
 Make sure these files are present in the same folder:
 
-1. `main.py`
+1. `main.py` (the single entry point; run with `--report medline_pbo` or `--report medline_allocation`)
 2. `first_time_setup.py`
-3. `config.yaml`
+3. `reports/medline_pbo/config.yaml` and `reports/medline_allocation/config.yaml`
 4. `.env`
 5. `requirements.txt`
-6. The `src` folder and its contents
+6. The `src` folder (shared code) and the `reports` folder (per-report code)
 
 ## 1. First-Time Setup on a New Machine
 
@@ -111,7 +122,7 @@ Open a new PowerShell window, go back to the project folder, activate the virtua
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
 .\.venv\Scripts\Activate.ps1
-python main.py
+python main.py --report medline_pbo
 ```
 
 or:
@@ -119,7 +130,7 @@ or:
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
 .\venv\Scripts\Activate.ps1
-python main.py
+python main.py --report medline_pbo
 ```
 
 If setup was correct, the pipeline will start normally.
@@ -143,14 +154,14 @@ cd "your_path_to_this_folder\A13-MedlinePBO"
 .\run_medline_pbo.bat
 ```
 
-This batch file always targets the project's own `.venv\Scripts\python.exe`, `main.py`, and `config.yaml` by absolute path derived from the batch file location, so it does not depend on the caller's working directory.
+This batch file always targets the project's own `.venv\Scripts\python.exe`, `main.py`, and its `config.yaml` by absolute path derived from the batch file location, so it does not depend on the caller's working directory.
 
 Direct Python option:
 
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
 .\.venv\Scripts\Activate.ps1
-python main.py
+python main.py --report medline_pbo
 ```
 
 or:
@@ -158,7 +169,7 @@ or:
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
 .\venv\Scripts\Activate.ps1
-python main.py
+python main.py --report medline_pbo
 ```
 
 You do not need to enter the passphrase again unless the Windows user profile changes or the passphrase needs to be replaced.
@@ -194,7 +205,7 @@ Before scheduling anything, confirm this works in PowerShell:
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
 .\.venv\Scripts\Activate.ps1
-python main.py
+python main.py --report medline_pbo
 ```
 
 or:
@@ -202,7 +213,7 @@ or:
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
 .\venv\Scripts\Activate.ps1
-python main.py
+python main.py --report medline_pbo
 ```
 
 If this manual run fails, do not create the scheduled task yet.
@@ -250,7 +261,7 @@ Start in:
 (optional) your_path_to_this_folder\A13-MedlinePBO
 ```
 
-This is the safest option because the batch file builds absolute paths to `.venv\Scripts\python.exe`, `main.py`, and `config.yaml` from its own folder.
+This is the safest option because the batch file builds absolute paths to `.venv\Scripts\python.exe`, `main.py`, and its `config.yaml` from its own folder.
 
 Direct Python setup if you do not want to use the batch file:
 
@@ -263,7 +274,7 @@ your_path_to_this_folder\A13-MedlinePBO\.venv\Scripts\python.exe
 Add arguments:
 
 ```text
-"your_path_to_this_folder\A13-MedlinePBO\main.py" --config "your_path_to_this_folder\A13-MedlinePBO\config.yaml"
+"your_path_to_this_folder\A13-MedlinePBO\main.py" --report medline_pbo --config "your_path_to_this_folder\A13-MedlinePBO\reports\medline_pbo\config.yaml"
 ```
 
 Start in:
@@ -301,7 +312,7 @@ python first_time_setup.py
 ### Run the pipeline
 
 ```powershell
-python main.py
+python main.py --report medline_pbo
 ```
 
 ### Re-encrypt `.env` secrets if they were updated
@@ -345,7 +356,7 @@ How to read the results:
 1. If Step 3 shows a value, but Step 1 is blank, the variable was saved correctly but the current terminal did not inherit it.
 2. In that case, close VS Code fully or close that PowerShell window, then open a brand new PowerShell window and test again.
 3. If Step 3 is blank, run `python first_time_setup.py` again because the value was not persisted.
-4. If Steps 1, 2, and 3 all show a value, but `python main.py` still fails, the stored passphrase likely does not match the encrypted values in `.env`.
+4. If Steps 1, 2, and 3 all show a value, but `python main.py --report medline_pbo` still fails, the stored passphrase likely does not match the encrypted values in `.env`.
 
 ### Quick temporary test for the current PowerShell window
 
@@ -353,7 +364,7 @@ If you know the correct passphrase, you can set it only for the current shell an
 
 ```powershell
 $env:PBO_SECRET_PASSPHRASE = "your-real-passphrase"
-python main.py
+python main.py --report medline_pbo
 ```
 
 ### Timeout behavior
