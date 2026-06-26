@@ -27,12 +27,29 @@ from src.secret_crypto import SECRET_ENV_VAR
 PIPELINE_TIMEOUT_SECONDS = 15 * 60
 
 
+class Progress:
+    """Emit staged progress lines like ``[3/8] Database tables fetched``.
+
+    The total is the report's own step count plus the 3 framing stages the
+    runner contributes (config load + success notification + ETL-health).
+    """
+
+    def __init__(self, total):
+        self.total = total
+        self.n = 0
+
+    def step(self, label):
+        self.n += 1
+        print(f"[{self.n}/{self.total}] {label}")
+
+
 class RunContext:
     """Mutable per-run state the pipeline updates for ETL-health logging."""
 
-    def __init__(self):
+    def __init__(self, progress=None):
         self.source_file_path = ""
         self.row_count = 0
+        self.progress = progress
 
 
 def _load_runtime_config_and_secrets(config_path):
@@ -94,21 +111,26 @@ def _handle_timeout_failure(config, secrets, start_time, log_path, package_path)
         print(f"Failed to insert ETL health: {db_exc}")
 
 
-def run_worker(pipeline_fn, config_path, log_path, package_path):
-    """Worker process: run the pipeline and log/notify around it."""
+def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps):
+    """Worker process: run the pipeline and log/notify around it.
+
+    *pipeline_steps* is the number of stages the pipeline itself reports; the
+    runner adds 3 framing stages (config load, success notify, ETL-health).
+    """
     start_time = datetime.now()
     config, secrets, _ = _load_runtime_config_and_secrets(config_path)
     logger = TeeLogger(config["logging"]["log_dir"], log_path=log_path)
-    ctx = RunContext()
+    progress = Progress(pipeline_steps + 3)
+    ctx = RunContext(progress)
 
     try:
         print(f"Pipeline started at {start_time:%Y-%m-%d %H:%M:%S}")
-        print("Config & secrets loaded.")
+        progress.step("Config & secrets loaded")
 
         output_path = pipeline_fn(config, secrets, ctx)
 
         send_success_notification(config, secrets, output_path)
-        print("Success notification sent.")
+        progress.step("Success notification sent")
 
         insert_etl_health(
             config,
@@ -121,7 +143,7 @@ def run_worker(pipeline_fn, config_path, log_path, package_path):
             log_file_path=logger.log_path,
             error_message="",
         )
-        print("ETL health logged.")
+        progress.step("ETL health logged")
 
     except Exception:
         traceback.print_exc()  # captured by TeeLogger

@@ -29,6 +29,10 @@ from reports.medline_pbo.transform import (
     assemble_output,
 )
 
+# Stages this pipeline reports; the runner adds 3 framing stages
+# (config load, success notify, ETL-health) for a total of [1/8]..[8/8].
+STEP_COUNT = 5
+
 
 def run(config, secrets, ctx):
     # ── 1. Download latest Excel attachment ──
@@ -42,7 +46,7 @@ def run(config, secrets, ctx):
     if save_path is None:
         raise FileNotFoundError("No attachment found. Aborting.")
     ctx.source_file_path = save_path
-    print(f"Excel downloaded: {latest_file}")
+    ctx.progress.step(f"Email attachment downloaded: {latest_file}")
 
     # ── 2. Ingest & validate ──
     report_cfg = config["report"]
@@ -55,7 +59,7 @@ def run(config, secrets, ctx):
     )
     uom_df = extract_uom_table(df)
     ctx.row_count = len(df)
-    print(f"Ingestion complete — {ctx.row_count} rows.")
+    ctx.progress.step(f"File ingested & validated — {ctx.row_count} rows")
 
     # ── 3. Fetch database tables ──
     database_cfg = config["database"]
@@ -63,7 +67,7 @@ def run(config, secrets, ctx):
     conn = get_connection(config)
     tables = fetch_tables(conn, locations)
     conn.close()
-    print("Database tables fetched.")
+    ctx.progress.step("Database tables fetched")
 
     # ── 4. Transform ──
     prepared_tables = prepare_location_inventory_tables(
@@ -104,7 +108,7 @@ def run(config, secrets, ctx):
         timestamp_value,
         prepared_tables["ipyc_items"],
     )
-    print(f"Transformation complete — {len(df_output)} output rows.")
+    ctx.progress.step(f"Data transformed — {len(df_output)} output rows")
 
     # ── 5. Export styled report ──
     df_output_reordered = reorder_columns(df_output, config)
@@ -115,5 +119,5 @@ def run(config, secrets, ctx):
         config,
         extra_sheets=[("UOM inconsistency", prepared_tables["uom_inconsistency"])],
     )
-    print(f"Report saved — {output_path}")
+    ctx.progress.step(f"Report exported — {output_path}")
     return output_path

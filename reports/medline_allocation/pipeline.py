@@ -16,6 +16,10 @@ from reports.medline_allocation import ingestion, persistence, transform
 from reports.medline_allocation.queries import ALLOCATION_TEMPLATES, LOST_ALLOC_SQL
 from reports.medline_allocation.weeks import get_prior_x_week_yearweek
 
+# Stages this pipeline reports; the runner adds 3 framing stages
+# (config load, success notify, ETL-health) for a total of [1/9]..[9/9].
+STEP_COUNT = 6
+
 
 def run(config, secrets, ctx):
     email_cfg = config["email"]
@@ -31,7 +35,7 @@ def run(config, secrets, ctx):
     if save_path is None:
         raise FileNotFoundError("No attachment found. Aborting.")
     ctx.source_file_path = save_path
-    print(f"Excel downloaded: {latest_file}")
+    ctx.progress.step(f"Email attachment downloaded: {latest_file}")
 
     # ── 2. Ingest & cleanse ──
     df = ingestion.read_allocation_file(save_path)
@@ -45,7 +49,7 @@ def run(config, secrets, ctx):
     df["Dummy ID"] = [(i + 1) for i in range(1, len(df) + 1)]
     df_small = df[df["C Group"] == report_cfg["c_group"]].copy()
     df_mini = df[df["Jesse Selection"] == "x"].copy()
-    print(f"Ingestion complete — {len(df)} rows ({len(df_mini)} selected).")
+    ctx.progress.step(f"File ingested & cleansed — {len(df)} rows ({len(df_mini)} selected)")
 
     # ── 3. Persist this week, THEN read prior weeks (order matters) ──
     persist_cfg = config["persistence"]
@@ -56,6 +60,7 @@ def run(config, secrets, ctx):
     persistence.upsert_unspsc(
         df, engine, persist_cfg["schema"], persist_cfg["unspsc_table"],
     )
+    ctx.progress.step(f"Weekly data persisted — YearWeek {current_yearweek}")
 
     prior_weeks = [get_prior_x_week_yearweek(n) for n in (1, 2, 3, 4)]
     min_yearweek = get_prior_x_week_yearweek(report_cfg["lost_alloc_lookback_weeks"])
@@ -76,7 +81,7 @@ def run(config, secrets, ctx):
         lost_alloc_conn,
     )
     lost_alloc_conn.close()
-    print("Database tables fetched.")
+    ctx.progress.step("Database tables fetched")
 
     # ── 5. Transform ──
     df_inv_agg, df_usage_agg, df_ehc = transform.build_enrichment(
@@ -99,7 +104,7 @@ def run(config, secrets, ctx):
     df_output_all = transform.assemble_output(
         df_full, df_review, df_small, current_yearweek, timestamp_value,
     )
-    print(f"Transformation complete — {len(df_output_all)} output rows.")
+    ctx.progress.step(f"Data transformed — {len(df_output_all)} output rows")
 
     # ── 6. Export styled report (only the current YearWeek stays visible) ──
     df_reordered = reorder_columns(df_output_all, config)
@@ -107,5 +112,5 @@ def run(config, secrets, ctx):
     output_path = apply_inventory_styling(
         df_reordered, output_path, config, filter_value=current_yearweek,
     )
-    print(f"Report saved — {output_path}")
+    ctx.progress.step(f"Report exported — {output_path}")
     return output_path

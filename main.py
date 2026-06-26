@@ -18,22 +18,22 @@ import os
 import warnings
 
 from src import runner
-from reports.medline_pbo.pipeline import run as medline_pbo_run
-from reports.medline_allocation.pipeline import run as medline_allocation_run
+from reports.medline_pbo import pipeline as medline_pbo_pipeline
+from reports.medline_allocation import pipeline as medline_allocation_pipeline
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-# report name -> (default config path, pipeline function)
+# report name -> (default config path, pipeline module)
 REGISTRY = {
     "medline_pbo": (
         os.path.join("reports", "medline_pbo", "config.yaml"),
-        medline_pbo_run,
+        medline_pbo_pipeline,
     ),
     "medline_allocation": (
         os.path.join("reports", "medline_allocation", "config.yaml"),
-        medline_allocation_run,
+        medline_allocation_pipeline,
     ),
 }
 
@@ -51,12 +51,15 @@ def main(argv=None):
     parser.add_argument("--log-path", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
-    default_config, pipeline_fn = REGISTRY[args.report]
+    default_config, pipeline_module = REGISTRY[args.report]
     config_path = args.config or default_config
     package_path = os.path.abspath(__file__)
 
     if args.worker:
-        runner.run_worker(pipeline_fn, config_path, args.log_path, package_path)
+        runner.run_worker(
+            pipeline_module.run, config_path, args.log_path, package_path,
+            pipeline_module.STEP_COUNT,
+        )
     else:
         runner.run_parent(
             entry_path=package_path,
