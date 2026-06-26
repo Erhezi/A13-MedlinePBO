@@ -1,8 +1,9 @@
 """Stateful side effects for the Allocation report.
 
-Upserts this week's rows into the report's own helper tables on the
-SCSFileIngestor server, so later runs can read prior weeks back to compute
-risk-of-loss. The engine is created by the pipeline via ``db.get_scs_engine``.
+Upserts this week's rows into the report's own helper tables, so later runs can
+read prior weeks back to compute risk-of-loss. The target schema/table names and
+the engine are supplied by the pipeline from ``config['persistence']`` so the
+helper tables can move to a different database without code changes.
 """
 
 from datetime import date
@@ -40,8 +41,10 @@ def _clean_text(value):
     return str(value).strip()
 
 
-_UNSPSC_UPSERT = text("""
-    UPDATE MedlineAllocation.WeeklyAllocUNSPSC
+def _unspsc_upsert_sql(schema, table):
+    # schema/table come from config (trusted), bracket-quoted as identifiers.
+    return text(f"""
+    UPDATE [{schema}].[{table}]
     SET
         [Manufacturer Name] = :manufacturer_name,
         [Manufacturer Item #] = :manufacturer_item,
@@ -55,7 +58,7 @@ _UNSPSC_UPSERT = text("""
 
     IF @@ROWCOUNT = 0
     BEGIN
-        INSERT INTO MedlineAllocation.WeeklyAllocUNSPSC
+        INSERT INTO [{schema}].[{table}]
         (
             [Manufacturer Name], [Manufacturer Item #],
             [Material #], [SalesUOM Code], [Material Qty],
@@ -70,11 +73,12 @@ _UNSPSC_UPSERT = text("""
             GETDATE(), GETDATE()
         );
     END;
-""")
+    """)
 
 
-def upsert_unspsc(df, engine, unspsc_cols=UNSPSC_COLS):
+def upsert_unspsc(df, engine, schema, table, unspsc_cols=UNSPSC_COLS):
     """Upsert the manufacturer/UNSPSC reference rows keyed by material+UOM+qty."""
+    upsert_sql = _unspsc_upsert_sql(schema, table)
     df_load = df[unspsc_cols]
 
     pk_cols = ["Material #", "SalesUOM Code", "Material Qty"]
@@ -103,14 +107,15 @@ def upsert_unspsc(df, engine, unspsc_cols=UNSPSC_COLS):
 
     with engine.begin() as conn:
         for rec in records:
-            conn.execute(_UNSPSC_UPSERT, rec)
+            conn.execute(upsert_sql, rec)
 
-    print(f"Upserted {len(records)} rows for UNSPSC update.")
+    print(f"Upserted {len(records)} rows into [{schema}].[{table}] (UNSPSC).")
     return len(records)
 
 
-_TRACKING_UPSERT = text("""
-    UPDATE MedlineAllocation.WeeklyAllocHelper
+def _tracking_upsert_sql(schema, table):
+    return text(f"""
+    UPDATE [{schema}].[{table}]
     SET
         [Allocation Period Start Dt] = :allocation_start_dt,
         [Allocation Period End Dt] = :allocation_end_dt,
@@ -130,7 +135,7 @@ _TRACKING_UPSERT = text("""
 
     IF @@ROWCOUNT = 0
     BEGIN
-        INSERT INTO MedlineAllocation.WeeklyAllocHelper
+        INSERT INTO [{schema}].[{table}]
         (
             [Allocation Period Start Dt], [Allocation Period End Dt],
             [SoldTo #], [Material #], [SalesUOM Code], [Material Qty],
@@ -149,12 +154,13 @@ _TRACKING_UPSERT = text("""
             GETDATE(), GETDATE()
         );
     END;
-""")
+    """)
 
 
-def upsert_tracking(df, engine, cols_to_load=TRACKING_COLS):
+def upsert_tracking(df, engine, schema, table, cols_to_load=TRACKING_COLS):
     """Upsert this week's allocation rows; return the current 'YYYYWW' string."""
     current_yearweek = get_year_week(date.today())
+    upsert_sql = _tracking_upsert_sql(schema, table)
 
     df_load = df[cols_to_load]
 
@@ -196,7 +202,7 @@ def upsert_tracking(df, engine, cols_to_load=TRACKING_COLS):
 
     with engine.begin() as conn:
         for rec in records:
-            conn.execute(_TRACKING_UPSERT, rec)
+            conn.execute(upsert_sql, rec)
 
-    print(f"Upserted {len(records)} rows for YearWeek {current_yearweek}")
+    print(f"Upserted {len(records)} rows into [{schema}].[{table}] for YearWeek {current_yearweek}")
     return current_yearweek

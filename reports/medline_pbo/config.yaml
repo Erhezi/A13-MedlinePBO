@@ -235,16 +235,16 @@ notification:
   report_name: "Medline PBO"
   success_recipients:
     - "dli2@montefiore.org"
-    - "kmaral@montefiore.org"
-    - "wmcelwaine@montefiore.org"
-    - "josdanie@montefiore.org"
-    - "RMATIAS@montefiore.org"
+    # - "kmaral@montefiore.org"
+    # - "wmcelwaine@montefiore.org"
+    # - "josdanie@montefiore.org"
+    # - "RMATIAS@montefiore.org"
   success_cc_recipients:
-    - "mcondoleo@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "mcondoleo@montefiore.org"
+    # - "abhashem@montefiore.org"
   failure_recipients:
     - "dli2@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging
@@ -268,7 +268,7 @@ etl_health:
   server: 'YNBBSTVWP02\PROCDATASRVPROD'
   database: "SCSFileIngestor"
   trusted_connection: "yes"
-  schema: "MedlinePBO"
+  schema: "MedlineReport"
   table: "ETLHealth"
   process_name: "Medline PBO"
   process_id: "MEDPBO_W_DL"

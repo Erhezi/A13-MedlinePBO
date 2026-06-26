@@ -10,46 +10,38 @@ import pyodbc
 from src.queries import BASE_TEMPLATES
 
 
-def get_connection(config):
-    """Open a pyodbc connection to the main PRIME database (config['database'])."""
-    db = config["database"]
-    return pyodbc.connect(
-        driver=db["driver"],
-        server=db["server"],
-        database=db["database"],
-        trusted_connection=db["trusted_connection"],
-    )
+def get_pyodbc_connection(conn_cfg):
+    """Open a pyodbc connection from a connection-config dict.
 
-
-def get_scs_connection(config):
-    """Open a pyodbc connection to the SCSFileIngestor server (config['etl_health']).
-
-    The same server hosts ETL-health tracking and report-specific helper tables
-    (e.g. MedlineAllocation.WeeklyAllocHelper).
+    Expects keys: driver, server, database, trusted_connection.
     """
-    etl = config["etl_health"]
     return pyodbc.connect(
-        driver=etl["driver"],
-        server=etl["server"],
-        database=etl["database"],
-        trusted_connection=etl["trusted_connection"],
+        driver=conn_cfg["driver"],
+        server=conn_cfg["server"],
+        database=conn_cfg["database"],
+        trusted_connection=conn_cfg["trusted_connection"],
     )
 
 
-def get_scs_engine(config):
-    """Return a SQLAlchemy engine for the SCSFileIngestor server.
+def get_engine(conn_cfg):
+    """Return a SQLAlchemy engine from a connection-config dict.
 
-    Used by reports that upsert into their own helper tables.
+    Expects keys: driver, server, database, trusted_connection. Used by reports
+    that upsert into their own helper tables.
     """
     from sqlalchemy import create_engine
 
-    etl = config["etl_health"]
-    driver = etl["driver"].strip("{}").replace(" ", "+")
+    driver = conn_cfg["driver"].strip("{}").replace(" ", "+")
     url = (
-        f"mssql+pyodbc://{etl['server']}/{etl['database']}"
-        f"?driver={driver}&trusted_connection={etl['trusted_connection']}"
+        f"mssql+pyodbc://{conn_cfg['server']}/{conn_cfg['database']}"
+        f"?driver={driver}&trusted_connection={conn_cfg['trusted_connection']}"
     )
     return create_engine(url, fast_executemany=True)
+
+
+def get_connection(config):
+    """Open a pyodbc connection to the main PRIME database (config['database'])."""
+    return get_pyodbc_connection(config["database"])
 
 
 def _build_location_filter(locations):

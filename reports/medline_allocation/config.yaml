@@ -222,16 +222,16 @@ notification:
   report_name: "Medline Allocation"
   success_recipients:
     - "dli2@montefiore.org"
-    - "kmaral@montefiore.org"
-    - "wmcelwaine@montefiore.org"
-    - "josdanie@montefiore.org"
-    - "RMATIAS@montefiore.org"
+    # - "kmaral@montefiore.org"
+    # - "wmcelwaine@montefiore.org"
+    # - "josdanie@montefiore.org"
+    # - "RMATIAS@montefiore.org"
   success_cc_recipients:
-    - "mcondoleo@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "mcondoleo@montefiore.org"
+    # - "abhashem@montefiore.org"
   failure_recipients:
     - "dli2@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging
@@ -249,17 +249,31 @@ maintenance:
 
 # ──────────────────────────────────────────────
 # ETL Health — process status tracking
-#   NOTE: requires a [MedlineAllocation].[ETLHealth] table on the SCS server
-#   (same shape as [MedlinePBO].[ETLHealth]). This block also supplies the
-#   SCSFileIngestor connection used for the WeeklyAlloc* upserts + history read.
+#   NOTE: requires a [MedlineReport].[ETLHealth] table (same shape as
+#   [MedlinePBO].[ETLHealth]).
 # ──────────────────────────────────────────────
 etl_health:
   driver: "{ODBC Driver 17 for SQL Server}"
   server: 'YNBBSTVWP02\PROCDATASRVPROD'
   database: "SCSFileIngestor"
   trusted_connection: "yes"
-  schema: "MedlineAllocation"
+  schema: "MedlineReport"
   table: "ETLHealth"
   process_name: "Medline Allocation"
   process_id: "MEDALLOC_D_DL"
   process_frequency: "Workdays"
+
+# ──────────────────────────────────────────────
+# Persistence — weekly allocation helper tables
+#   The report upserts the current week here, then reads prior weeks back for
+#   risk-of-loss. Same server as etl_health today, but a separate block so it can
+#   move to a different DB later — the schema + table names stay the same.
+# ──────────────────────────────────────────────
+persistence:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineAllocation"
+  tracking_table: "WeeklyAllocHelper"   # current-week tracking + risk-of-loss history
+  unspsc_table: "WeeklyAllocUNSPSC"      # manufacturer / UNSPSC reference

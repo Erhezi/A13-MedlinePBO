@@ -8,7 +8,7 @@ provides logging, notification, ETL-health, and maintenance.
 
 import pandas as pd
 
-from src.db import get_connection, get_scs_connection, get_scs_engine, fetch_tables
+from src.db import get_connection, get_pyodbc_connection, get_engine, fetch_tables
 from src.excel import reorder_columns, build_output_filename, apply_inventory_styling
 from src.msgraph import get_latest_excel_attachment
 
@@ -48,9 +48,14 @@ def run(config, secrets, ctx):
     print(f"Ingestion complete — {len(df)} rows ({len(df_mini)} selected).")
 
     # ── 3. Persist this week, THEN read prior weeks (order matters) ──
-    engine = get_scs_engine(config)
-    current_yearweek = persistence.upsert_tracking(df_mini, engine)
-    persistence.upsert_unspsc(df, engine)
+    persist_cfg = config["persistence"]
+    engine = get_engine(persist_cfg)
+    current_yearweek = persistence.upsert_tracking(
+        df_mini, engine, persist_cfg["schema"], persist_cfg["tracking_table"],
+    )
+    persistence.upsert_unspsc(
+        df, engine, persist_cfg["schema"], persist_cfg["unspsc_table"],
+    )
 
     prior_weeks = [get_prior_x_week_yearweek(n) for n in (1, 2, 3, 4)]
     min_yearweek = get_prior_x_week_yearweek(report_cfg["lost_alloc_lookback_weeks"])
@@ -61,11 +66,16 @@ def run(config, secrets, ctx):
     tables = fetch_tables(conn, locations, ALLOCATION_TEMPLATES)
     conn.close()
 
-    scs_conn = get_scs_connection(config)
+    lost_alloc_conn = get_pyodbc_connection(persist_cfg)
     df_lost_alloc = pd.read_sql_query(
-        LOST_ALLOC_SQL.format(min_yearweek=min_yearweek), scs_conn
+        LOST_ALLOC_SQL.format(
+            schema=persist_cfg["schema"],
+            table=persist_cfg["tracking_table"],
+            min_yearweek=min_yearweek,
+        ),
+        lost_alloc_conn,
     )
-    scs_conn.close()
+    lost_alloc_conn.close()
     print("Database tables fetched.")
 
     # ── 5. Transform ──

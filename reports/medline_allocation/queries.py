@@ -23,9 +23,10 @@ EXTRA_TEMPLATES = {
 # {location_filter}, so the format() pass leaves it unchanged).
 ALLOCATION_TEMPLATES = {**BASE_TEMPLATES, **EXTRA_TEMPLATES}
 
-# Read separately from the SCSFileIngestor server (this report's helper table).
+# Read separately from the persistence DB (this report's tracking helper table).
+# {schema}/{table} come from config['persistence']; {min_yearweek} from the run.
 LOST_ALLOC_SQL = """
     SELECT *
-    FROM MedlineAllocation.WeeklyAllocHelper
+    FROM [{schema}].[{table}]
     WHERE YearWeek >= '{min_yearweek}'
 """
