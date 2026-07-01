@@ -25,7 +25,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.5"
+  version: "1.6"
   # --------------------  new in v1.4 - 2026-03-18 --------------------
   # - Multi-location aggregation: IMDCSTRM + IPYCSTRM combined for inventory
   #   and usage so metrics reflect both sites.
@@ -43,6 +43,20 @@ report:
   #   so we need to get rid of row 1 when reading the file into dataframe)
   # - Reporting: column added and shown as base columns
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.6 - 2026-07-01 --------------------
+  # - move 'Medline Item', 'MIOH' to the top of the base report columns
+  # - freeze pane (top row) and column A, B (on the left side) in the final Excel
+  #   output, same as freeze pane at C2 (report.freeze_panes)
+  # - add a desired-DIOH order block (yellow header, report.yellow_header_cols),
+  #   populated only for rows flagged 'Review':
+  #   "Desired DIOH" (default to report.desired_dioh_default = 30),
+  #   "Qty to order for Desired DIOH" — a live Excel formula (report.formula_cols):
+  #     ((Desired DIOH - DIOH) * AverageDailyIssueOut - OnOrderQty) / BuyUOMMultiplier
+  #   "UOM" (takes the value from "DefaultBuyUOM"),
+  #   "YYYY-MM-DD Notes" (header's YYYY-MM-DD stamped with the run date)
+  # - Reporting: columns added under the yellow desired-DIOH header, additional 
+  #   styling for MIOH added (light-green cell background where MIOH > 0)
+  # ---------------------------------------------------------------------
   
   review_threshold: -10 # in days
   # basically this means we need to have at least 10 days of coverage by the estimated available date. 
@@ -57,6 +71,7 @@ report:
   font: { name: "Calibri", size: 10 }
   header_row_height: 85
   default_col_width: 8.43
+  freeze_panes: [1, 2]   # freeze top row + columns A, B (== freeze pane at C2)
   column_order: ["base_report", "item", "item_group", "rmd", "rmd_debug", "stamp"]
   hide_groups: ["rmd_debug", "stamp"]
   header_colors:
@@ -70,10 +85,19 @@ report:
   conditional_color:
     columns: ["Get Well - DIOH", "Get Well - DIOH_ig"]
     threshold_key: "review_threshold"
+  # Light-green cell background where the column's own value meets the comparison.
+  value_fills:
+    - column: "MIOH"
+      criteria: ">"
+      value: 0
+      bg: "#C6EFCE"   # light green
 
   # Jesse selection criteria
   risk_levels: ["High", "Severe"]
   duration_threshold: 3
+
+  # Default target DIOH for the v1.6 "Qty to order for Desired DIOH" columns.
+  desired_dioh_default: 30
 
   required_columns: # for the input file
     - "Risk Level"
@@ -100,10 +124,10 @@ report:
   # ── Column groups (control report layout) ──
   columns:
     base_report:
-      - "Risk Level"
-      - "Customer Material Number"
       - "Medline Item"
       - "MIOH"
+      - "Risk Level"
+      - "Customer Material Number"
       - "Manufacturer"
       - "Manufacturer Item"
       - "Material Description"
@@ -141,6 +165,10 @@ report:
       - "Days to Get Well"
       - "Get Well - DIOH"
       - "Flag"
+      - "Desired DIOH"                  # NEW ON v1.6
+      - "Qty to order for Desired DIOH" # NEW ON v1.6
+      - "UOM"                           # NEW ON v1.6
+      - "YYYY-MM-DD Notes"              # NEW ON v1.6
       - "Description3"
 
     item_group:
@@ -187,7 +215,6 @@ report:
     - "No Issue Out (Last 365 Days)"
     - "report stamp"
     - "VendorItem"
-    - "Flag"
     - "VendorItem_Repl."
     - "Flag_ig"
     # rmd_debug + stamp are appended programmatically
@@ -206,6 +233,7 @@ report:
     - "AvailableQty"
     - "OnOrderQty"
     - "BuyUOMMultiplier"
+    - "Qty to order for Desired DIOH"  # NEW ON v1.6 (embedded formula result)
     - "AvailableQty_Repl."
     - "AvailableQty_ig"
     - "OnOrderQty_Repl."
@@ -226,7 +254,22 @@ report:
     - "Description3_Repl."
     - "IB Code"
     - "IB Note"
+    - "YYYY-MM-DD Notes"
 
+  yellow_header_cols:
+    - "Desired DIOH"
+    - "Qty to order for Desired DIOH"
+    - "UOM"
+    - "YYYY-MM-DD Notes"
+
+  # ── Live Excel formulas (consumed by src/excel.py) ──
+  # Each {Column Name} token is replaced with that column's live cell reference
+  # for the current row, e.g. the template below renders as =((AN8-AJ8)*AI8-AE8)/AG8.
+  # only_when limits the formula to rows whose gate column equals the value.
+  formula_cols:
+    "Qty to order for Desired DIOH":
+      template: "=(({Desired DIOH}-{DIOH})*{AverageDailyIssueOut}-{OnOrderQty})/{BuyUOMMultiplier}"
+      only_when: { column: "Flag", value: "Review" }
 
 # ──────────────────────────────────────────────
 # Notification — email recipients

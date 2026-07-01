@@ -116,6 +116,14 @@ def _write_workbook(df, file_name, config, filter_value, extra_sheets):
             for col_name in cols.get(group, []):
                 header_fmt_by_col[col_name] = group_fmt
 
+        # Yellow-header override for explicitly listed columns (e.g. the PBO
+        # v1.6 desired-DIOH block), applied on top of any group colour.
+        yellow_header_cols = report.get("yellow_header_cols", [])
+        if yellow_header_cols:
+            yellow_fmt = workbook.add_format({**hdr, "bg_color": "#FFFF00"})
+            for col_name in yellow_header_cols:
+                header_fmt_by_col[col_name] = yellow_fmt
+
         fmt_two_dec = workbook.add_format({**base_font, "num_format": "#,##0.00"})
         fmt_thousands = workbook.add_format({**base_font, "num_format": "#,##0"})
         fmt_text = workbook.add_format(
@@ -128,7 +136,8 @@ def _write_workbook(df, file_name, config, filter_value, extra_sheets):
         fmt_date = workbook.add_format({**base_font, "num_format": "mm/dd/yyyy"})
 
         worksheet.set_row(0, header_height)
-        worksheet.freeze_panes(1, 0)
+        freeze_row, freeze_col = report.get("freeze_panes", [1, 0])
+        worksheet.freeze_panes(freeze_row, freeze_col)
 
         worksheet.conditional_format(1, 0, len(df), len(df.columns) - 1, {
             "type": "formula", "criteria": "=ROW()>0", "format": fmt_border,
@@ -157,7 +166,9 @@ def _write_workbook(df, file_name, config, filter_value, extra_sheets):
                 worksheet.set_column(col_num, col_num, None, None, {"hidden": True})
 
             if col_name in header_fmt_by_col:
-                worksheet.write(0, col_num, col_name, header_fmt_by_col[col_name])
+                worksheet.write(
+                    0, col_num, _dynamic_header(col_name), header_fmt_by_col[col_name]
+                )
 
         # Blank-fill empties so long neighbouring text does not overflow into them.
         for row_num in range(1, len(df) + 1):
@@ -166,11 +177,15 @@ def _write_workbook(df, file_name, config, filter_value, extra_sheets):
                 if pd.isna(value) or value == "":
                     worksheet.write(row_num, col_num, " ", fmt_default)
 
+        # Live Excel formulas overwrite the blank-fill placeholders above.
+        _apply_formula_columns(workbook, worksheet, df, report, base_font)
+
         worksheet.conditional_format(1, 0, len(df), len(df.columns) - 1, {
             "type": "formula", "criteria": "=MOD(ROW(),2)=0", "format": fmt_banded,
         })
 
         _apply_conditional_color(workbook, worksheet, df, report, base_font)
+        _apply_value_fills(workbook, worksheet, df, report, base_font)
         _apply_highlight(workbook, worksheet, df, report, base_font)
         _apply_row_filter(worksheet, df, report, filter_value)
 
@@ -203,6 +218,41 @@ def _apply_conditional_color(workbook, worksheet, df, report, base_font):
         })
         worksheet.conditional_format(1, idx, len(df), idx, {
             "type": "cell", "criteria": "<", "value": threshold, "format": fmt_green,
+        })
+
+
+def _apply_value_fills(workbook, worksheet, df, report, base_font):
+    """Fill a cell's background when its own numeric value meets a comparison.
+
+    ``report.value_fills`` is a list of rules::
+
+        value_fills:
+          - column: "MIOH"
+            criteria: ">"
+            value: 0
+            bg: "#C6EFCE"   # light green
+
+    The comparison is guarded with ``ISNUMBER`` so blank-fill placeholders (a
+    space, which Excel ranks above any number) are never matched.
+    """
+    specs = report.get("value_fills")
+    if not specs:
+        return
+    from xlsxwriter.utility import xl_col_to_name
+
+    for spec in specs:
+        col_name = spec["column"]
+        if col_name not in df.columns:
+            continue
+        idx = df.columns.get_loc(col_name)
+        letter = xl_col_to_name(idx)
+        fmt = workbook.add_format({**base_font, "bg_color": spec["bg"]})
+        criteria = spec.get("criteria", ">")
+        value = spec["value"]
+        worksheet.conditional_format(1, idx, len(df), idx, {
+            "type": "formula",
+            "criteria": f"=AND(ISNUMBER(${letter}2),${letter}2{criteria}{value})",
+            "format": fmt,
         })
 
 
@@ -251,6 +301,74 @@ def _apply_row_filter(worksheet, df, report, filter_value):
     for row_num, cell in enumerate(df[col], start=1):
         if str(cell) != str(value):
             worksheet.set_row(row_num, None, None, {"hidden": True})
+
+
+def _dynamic_header(col_name):
+    """Substitute a literal ``YYYY-MM-DD`` token in a header with today's date."""
+    if "YYYY-MM-DD" in col_name:
+        from datetime import date
+        return col_name.replace("YYYY-MM-DD", date.today().isoformat())
+    return col_name
+
+
+def _apply_formula_columns(workbook, worksheet, df, report, base_font):
+    """Write live Excel formulas into columns configured under ``formula_cols``.
+
+    Each entry maps a target column to a rule::
+
+        formula_cols:
+          "Qty to order for Desired DIOH":
+            template: "=(({Desired DIOH}-{DIOH})*{AverageDailyIssueOut}-{OnOrderQty})/{BuyUOMMultiplier}"
+            only_when: { column: "Flag", value: "Review" }
+
+    Every ``{Column Name}`` token is replaced with that column's live cell
+    reference for the current row (e.g. ``AN8``), so the formula recalculates in
+    Excel if a referenced cell is edited. With ``only_when`` set, the formula is
+    written only for rows whose gate column equals the value; other rows keep the
+    blank-fill placeholder.
+    """
+    spec = report.get("formula_cols")
+    if not spec:
+        return
+
+    import re
+    from xlsxwriter.utility import xl_col_to_name
+
+    two_decimal_cols = report.get("two_decimal_cols", [])
+    thousands_sep_cols = report.get("thousands_sep_cols", [])
+    token_re = re.compile(r"\{([^{}]+)\}")
+
+    for col_name, rule in spec.items():
+        if col_name not in df.columns:
+            continue
+        referenced = token_re.findall(rule["template"])
+        missing = [c for c in referenced if c not in df.columns]
+        if missing:
+            print(f"Formula column '{col_name}' skipped — missing columns: {missing}")
+            continue
+
+        target_idx = df.columns.get_loc(col_name)
+        if col_name in two_decimal_cols:
+            fmt = workbook.add_format({**base_font, "num_format": "#,##0.00"})
+        elif col_name in thousands_sep_cols:
+            fmt = workbook.add_format({**base_font, "num_format": "#,##0"})
+        else:
+            fmt = workbook.add_format({**base_font})
+
+        col_letters = {c: xl_col_to_name(df.columns.get_loc(c)) for c in referenced}
+
+        gate = rule.get("only_when")
+        gate_idx = df.columns.get_loc(gate["column"]) if gate else None
+        gate_value = str(gate["value"]) if gate else None
+
+        for i in range(len(df)):
+            if gate is not None and str(df.iloc[i, gate_idx]) != gate_value:
+                continue
+            excel_row = i + 2  # header occupies Excel row 1; data starts at row 2
+            formula = token_re.sub(
+                lambda m: f"{col_letters[m.group(1)]}{excel_row}", rule["template"]
+            )
+            worksheet.write_formula(i + 1, target_idx, formula, fmt)
 
 
 def apply_inventory_styling(df, file_name, config, filter_value=None, extra_sheets=None):

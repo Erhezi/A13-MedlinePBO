@@ -472,3 +472,23 @@ def assemble_output(df_full, df_review_to_merge, timestamp_value, ipyc_items):
         lambda item: "Yes" if item in ipyc_items else "No"
     )
     return df_output
+
+
+def add_desired_dioh_columns(df_output, desired_dioh_default=30, review_flag_value="Review"):
+    """Add the v1.6 desired-DIOH order columns (populated for review rows only).
+
+    ``Qty to order for Desired DIOH`` is intentionally left blank here — its
+    values are written as live Excel formulas at export time (see
+    ``src/excel.py`` ``formula_cols``) so users can tweak ``Desired DIOH`` and
+    have the order quantity recalculate in-sheet. ``UOM`` mirrors the item's
+    ``DefaultBuyUOM``, and ``YYYY-MM-DD Notes`` is a free-text column whose header
+    is stamped with the run date on export.
+    """
+    df = df_output.copy()
+    review_mask = df["Flag"] == review_flag_value
+
+    df["Desired DIOH"] = np.where(review_mask, desired_dioh_default, np.nan)
+    df["Qty to order for Desired DIOH"] = np.nan
+    df["UOM"] = np.where(review_mask, df["DefaultBuyUOM"], "")
+    df["YYYY-MM-DD Notes"] = ""
+    return df

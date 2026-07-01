@@ -27,6 +27,7 @@ from reports.medline_pbo.transform import (
     build_uom_conversions,
     apply_uom_alternatives,
     assemble_output,
+    add_desired_dioh_columns,
 )
 
 # Stages this pipeline reports; the runner adds 3 framing stages
@@ -107,6 +108,9 @@ def run(config, secrets, ctx):
         df_review_to_merge,
         timestamp_value,
         prepared_tables["ipyc_items"],
+    )
+    df_output = add_desired_dioh_columns(
+        df_output, desired_dioh_default=report_cfg.get("desired_dioh_default", 30),
     )
     ctx.progress.step(f"Data transformed — {len(df_output)} output rows")
 
