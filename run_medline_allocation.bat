@@ -2,7 +2,7 @@
 setlocal
 
 for %%I in ("%~dp0.") do set "PROJECT_DIR=%%~fI"
-set "PYTHON_EXE=%PROJECT_DIR%\.venv\Scripts\python.exe"
+set "PYTHON_EXE=%PROJECT_DIR%\venv\Scripts\python.exe"
 set "MAIN_PY=%PROJECT_DIR%\main.py"
 set "CONFIG_YAML=%PROJECT_DIR%\reports\medline_allocation\config.yaml"
 
@@ -23,8 +23,8 @@ if not exist "%CONFIG_YAML%" (
 
 "%PYTHON_EXE%" "%MAIN_PY%" --report medline_allocation --config "%CONFIG_YAML%"
 set "EXIT_CODE=%ERRORLEVEL%"
-echo.
-echo Press any key to close this window...
-pause >nul
+REM echo.
+REM echo Press any key to close this window...
+REM pause >nul
 
 endlocal & exit /b %EXIT_CODE%
