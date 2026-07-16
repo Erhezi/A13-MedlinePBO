@@ -1,0 +1,4 @@
+[Thu 07/16/2026 10:05:55.34] Starting - mode: test 
+[Thu 07/16/2026 10:05:55.34] ERROR: python.exe missing 
+[Thu 07/16/2026 10:05:55.50] Starting - mode: test 
+[Thu 07/16/2026 10:05:55.50] ERROR: unknown argument "--bad" - use --test or --prd 

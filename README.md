@@ -151,8 +151,11 @@ Preferred option:
 
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
-.\run_medline_pbo.bat
+.\run_medline_pbo.bat --test   # emails go to notification.test_recipients only
+.\run_medline_pbo.bat --prd    # emails go to the full recipient lists
 ```
+
+Running the batch file with no argument is the same as `--test`: the default is always test mode, so production emails require an explicit `--prd`. An unrecognized argument makes the batch file exit with an error instead of running.
 
 This batch file always targets the project's own `.venv\Scripts\python.exe`, `main.py`, and its `config.yaml` by absolute path derived from the batch file location, so it does not depend on the caller's working directory.
 
@@ -161,7 +164,8 @@ Direct Python option:
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
 .\.venv\Scripts\Activate.ps1
-python main.py --report medline_pbo
+python main.py --report medline_pbo              # test mode (default)
+python main.py --report medline_pbo --mode prd   # production recipients
 ```
 
 or:
@@ -252,8 +256,10 @@ your_path_to_this_folder\A13-MedlinePBO\run_medline_pbo.bat
 Add arguments:
 
 ```text
-(leave blank)
+--prd
 ```
+
+Use `--prd` for the production task (emails the full recipient lists). Use `--test` — or leave the field blank — for a test task that only emails `notification.test_recipients` from the report's `config.yaml`. The default is test mode, so a task with a blank or mistyped argument can never email the full distribution list.
 
 Start in:
 

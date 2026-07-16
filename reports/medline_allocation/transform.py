@@ -206,8 +206,11 @@ def build_full(df_msub, df_ig):
 def recommend(df_full, target_dioh):
     """Flag Review items and compute recommended order quantities.
 
-    Mutates *df_full* (adds DIOH_final / Flag / Min DIOH) and returns
-    ``(df_full, df_review)``.
+    Order quantities are computed for every row whose ``Item`` resolved and
+    matched inventory (``Matched IMDC + IPYC`` == 'Matched'), not just the
+    'Review'-flagged subset — rows not flagged 'Review' get 0 (nothing to
+    order). Mutates *df_full* (adds DIOH_final / Flag / Min DIOH) and returns
+    ``(df_full, df_rmd)``.
     """
     df_full["DIOH_final"] = df_full["DIOH_ig"].fillna(df_full["DIOH"])
     df_full["Flag"] = df_full["DIOH_final"].apply(
@@ -224,37 +227,41 @@ def recommend(df_full, target_dioh):
         "DefaultBuyUOM", "BuyUOMMultiplier",
         "DefaultBuyUOM_Repl.", "BuyUOMMultiplier_Repl.",
     ]
-    df_review = df_full[df_full["Flag"] == "Review"][cols].copy()
+    matched = df_full["Item"].notna() & (df_full["Matched IMDC + IPYC"] == "Matched")
+    df_rmd = df_full[matched][cols].copy()
 
-    df_review["Recommended Order Qty (EA)"] = (
-        target_dioh - df_review["DIOH_final"]
-    ) * (df_review["AverageDailyIssueOut_ig"].fillna(df_review["AverageDailyIssueOut"]))
-
-    df_review["Recommended Order Qty (in BuyUOM)"] = np.ceil(
-        df_review["Recommended Order Qty (EA)"] / df_review["BuyUOMMultiplier"]
-    )
-    df_review["Recomended Order Qty (in BuyUOM)_Repl."] = np.ceil(
-        df_review["Recommended Order Qty (EA)"] / df_review["BuyUOMMultiplier_Repl."]
+    df_rmd["Recommended Order Qty (EA)"] = np.where(
+        df_rmd["Flag"] == "Review",
+        (target_dioh - df_rmd["DIOH_final"])
+        * (df_rmd["AverageDailyIssueOut_ig"].fillna(df_rmd["AverageDailyIssueOut"])),
+        0.0,
     )
 
-    df_review["Recommended Order Qty with Allocation (EA)"] = df_review[
+    df_rmd["Recommended Order Qty (in BuyUOM)"] = np.ceil(
+        df_rmd["Recommended Order Qty (EA)"] / df_rmd["BuyUOMMultiplier"]
+    )
+    df_rmd["Recomended Order Qty (in BuyUOM)_Repl."] = np.ceil(
+        df_rmd["Recommended Order Qty (EA)"] / df_rmd["BuyUOMMultiplier_Repl."]
+    )
+
+    df_rmd["Recommended Order Qty with Allocation (EA)"] = df_rmd[
         ["Recommended Order Qty (EA)", "Qty available to order (EA, by MPN)"]
     ].apply(lambda x: x.min(), axis=1)
-    df_review["Recommended Order Qty with Allocation (in BuyUOM)"] = np.ceil(
-        df_review["Recommended Order Qty with Allocation (EA)"]
-        / df_review["BuyUOMMultiplier"]
+    df_rmd["Recommended Order Qty with Allocation (in BuyUOM)"] = np.ceil(
+        df_rmd["Recommended Order Qty with Allocation (EA)"]
+        / df_rmd["BuyUOMMultiplier"]
     )
-    df_review["Recommended Order Qty with Allocation (in BuyUOM)_Repl."] = np.ceil(
-        df_review["Recommended Order Qty with Allocation (EA)"]
-        / df_review["BuyUOMMultiplier_Repl."]
+    df_rmd["Recommended Order Qty with Allocation (in BuyUOM)_Repl."] = np.ceil(
+        df_rmd["Recommended Order Qty with Allocation (EA)"]
+        / df_rmd["BuyUOMMultiplier_Repl."]
     )
-    return df_full, df_review
+    return df_full, df_rmd
 
 
-def assemble_output(df_full, df_review, df_small, current_yearweek, timestamp_value):
+def assemble_output(df_full, df_rmd, df_small, current_yearweek, timestamp_value):
     """Join recommendations back, attach risk/timestamp, and append other weeks."""
     df_output = df_full.merge(
-        df_review[
+        df_rmd[
             [
                 "Dummy ID",
                 "Recommended Order Qty (EA)",
@@ -275,3 +282,25 @@ def assemble_output(df_full, df_review, df_small, current_yearweek, timestamp_va
 
     other_weeks = df_small[df_small["YearWeek"] != current_yearweek]
     return pd.concat([df_output, other_weeks], ignore_index=True)
+
+
+def add_desired_dioh_columns(df_output, desired_dioh_default=60):
+    """Add the v1.4 desired-DIOH order columns.
+
+    Populated for every row whose ``Item`` resolved and matched inventory
+    (``Matched IMDC + IPYC`` == 'Matched'). ``Qty to order for Desired DIOH``
+    and ``UOM`` are intentionally left blank here — both are written as live
+    Excel formulas at export time (see ``src/excel.py`` ``formula_cols``): the
+    order quantity recalculates in-sheet when ``Desired DIOH`` is edited, and
+    ``UOM`` references the row's ``SalesUOM Code`` cell so users can see it is
+    the sales UOM, not ``DefaultBuyUOM``. ``YYYY-MM-DD Notes`` is a free-text
+    column whose header is stamped with the run date on export.
+    """
+    df = df_output.copy()
+    matched_mask = df["Item"].notna() & (df["Matched IMDC + IPYC"] == "Matched")
+
+    df["Desired DIOH"] = np.where(matched_mask, desired_dioh_default, np.nan)
+    df["Qty to order for Desired DIOH"] = np.nan
+    df["UOM"] = ""
+    df["YYYY-MM-DD Notes"] = ""
+    return df

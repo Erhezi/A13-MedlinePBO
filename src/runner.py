@@ -52,6 +52,28 @@ class RunContext:
         self.progress = progress
 
 
+def _apply_notification_mode(config, mode):
+    """Redirect notifications when running in test mode.
+
+    In test mode every notification (success and failure) goes to
+    ``notification.test_recipients`` only, cc is suppressed, and the report
+    name is tagged ``(TEST)`` so the emails are unmistakable. In prd mode the
+    config is left untouched.
+    """
+    notification = config.get("notification", {})
+    if mode != "test":
+        print("Notification mode: PRD — full recipient lists in effect.")
+        return
+    test_recipients = notification.get("test_recipients") or []
+    notification["success_recipients"] = test_recipients
+    notification["success_cc_recipients"] = []
+    notification["failure_recipients"] = test_recipients
+    report_name = notification.get("report_name", "Report")
+    if not report_name.endswith("(TEST)"):
+        notification["report_name"] = f"{report_name} (TEST)"
+    print(f"Notification mode: TEST — all emails redirected to {test_recipients}.")
+
+
 def _load_runtime_config_and_secrets(config_path):
     resolved_config_path = resolve_config_path(config_path)
     config = load_config(resolved_config_path)
@@ -111,11 +133,13 @@ def _handle_timeout_failure(config, secrets, start_time, log_path, package_path)
         print(f"Failed to insert ETL health: {db_exc}")
 
 
-def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps):
+def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps,
+               mode="test"):
     """Worker process: run the pipeline and log/notify around it.
 
     *pipeline_steps* is the number of stages the pipeline itself reports; the
     runner adds 3 framing stages (config load, success notify, ETL-health).
+    *mode* is ``"test"`` (default) or ``"prd"`` — see _apply_notification_mode.
     """
     start_time = datetime.now()
     config, secrets, _ = _load_runtime_config_and_secrets(config_path)
@@ -125,6 +149,7 @@ def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps)
 
     try:
         print(f"Pipeline started at {start_time:%Y-%m-%d %H:%M:%S}")
+        _apply_notification_mode(config, mode)
         progress.step("Config & secrets loaded")
 
         output_path = pipeline_fn(config, secrets, ctx)
@@ -180,14 +205,17 @@ def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps)
             print(f"Maintenance error (non-fatal): {mnt_exc}")
 
 
-def run_parent(entry_path, config_path, package_path, forward_args=()):
+def run_parent(entry_path, config_path, package_path, forward_args=(), mode="test"):
     """Parent process: launch the worker as a subprocess with a hard timeout.
 
     *forward_args* are inserted into the worker command line (e.g.
-    ``["--report", "medline_pbo"]``) so the child re-selects the same report.
+    ``["--report", "medline_pbo", "--mode", "test"]``) so the child re-selects
+    the same report and notification mode. *mode* is also applied here so the
+    timeout-failure notification honours it.
     """
     start_time = datetime.now()
     config, secrets, resolved_config_path = _load_runtime_config_and_secrets(config_path)
+    _apply_notification_mode(config, mode)
     log_path = _build_log_path(config["logging"]["log_dir"], start_time)
     cmd = [
         sys.executable,

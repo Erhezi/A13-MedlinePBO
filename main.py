@@ -8,6 +8,11 @@ Usage:
     python main.py --report medline_pbo --config <path-to-config.yaml>
     python main.py --report medline_allocation --config <path-to-config.yaml>
 
+    Notification mode (defaults to test so a bare run can never email the
+    full distribution list):
+    python main.py --report medline_pbo --mode test   # test_recipients only
+    python main.py --report medline_pbo --mode prd    # full recipient lists
+
 The shared runner (src/runner.py) provides the timeout watchdog, logging,
 notification, ETL-health, and maintenance. Each report's own steps live in
 reports/<report>/pipeline.py and are selected here by --report.
@@ -47,6 +52,11 @@ def main(argv=None):
     parser.add_argument(
         "--config", default=None, help="Override the report's default config path.",
     )
+    parser.add_argument(
+        "--mode", choices=["test", "prd"], default="test",
+        help="test (default): send notifications to test_recipients only; "
+             "prd: use the full recipient lists.",
+    )
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--log-path", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -58,14 +68,15 @@ def main(argv=None):
     if args.worker:
         runner.run_worker(
             pipeline_module.run, config_path, args.log_path, package_path,
-            pipeline_module.STEP_COUNT,
+            pipeline_module.STEP_COUNT, mode=args.mode,
         )
     else:
         runner.run_parent(
             entry_path=package_path,
             config_path=config_path,
             package_path=package_path,
-            forward_args=["--report", args.report],
+            forward_args=["--report", args.report, "--mode", args.mode],
+            mode=args.mode,
         )
 
 

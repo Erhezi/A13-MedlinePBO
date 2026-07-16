@@ -98,11 +98,14 @@ def run(config, secrets, ctx):
     df_msub = transform.merge_substitutes(df_m, df_sub)
     df_ig = transform.aggregate_item_groups(df_msub, tables["plmusage"])
     df_full = transform.build_full(df_msub, df_ig)
-    df_full, df_review = transform.recommend(df_full, report_cfg["target_dioh"])
+    df_full, df_rmd = transform.recommend(df_full, report_cfg["target_dioh"])
 
     timestamp_value = tables["timestamp"].values[0][0]
     df_output_all = transform.assemble_output(
-        df_full, df_review, df_small, current_yearweek, timestamp_value,
+        df_full, df_rmd, df_small, current_yearweek, timestamp_value,
+    )
+    df_output_all = transform.add_desired_dioh_columns(
+        df_output_all, desired_dioh_default=report_cfg.get("desired_dioh_default", 60),
     )
     ctx.progress.step(f"Data transformed — {len(df_output_all)} output rows")
 

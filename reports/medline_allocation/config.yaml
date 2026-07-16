@@ -25,7 +25,23 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.3"
+  version: "1.4"
+  # --------------------  new in v1.4 - 2026-07-15 --------------------
+  # - add a desired-DIOH order block (yellow header, report.yellow_header_cols),
+  #   populated for every row with an Item number resolved and matched to
+  #   inventory ('Matched IMDC + IPYC' = 'Matched'):
+  #   "Desired DIOH" (default to report.desired_dioh_default = 60),
+  #   "Qty to order for Desired DIOH" — a live Excel formula (report.formula_cols):
+  #     ((Desired DIOH - DIOH) * AverageDailyIssueOut - OnOrderQty) / Material Qty
+  #   "UOM" — a live Excel formula referencing the row's "SalesUOM Code" cell
+  #     (column F), so it is clear the sales UOM is used, not DefaultBuyUOM
+  #   "YYYY-MM-DD Notes" (header's YYYY-MM-DD stamped with the run date)
+  # - rmd (Recommended Order Qty*) columns are likewise computed for all
+  #   matched items, not just rows flagged 'Review'; rows not flagged 'Review'
+  #   get 0 (no order needed)
+  # - Reporting: columns added under the yellow desired-DIOH header in the item
+  #   group; "Qty to order for Desired DIOH" thousands-formatted
+  # ---------------------------------------------------------------------
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation'
   file_name_split_token: "Report"
   output_basename: "Processed_Medline_Product_Allocation"
@@ -34,6 +50,7 @@ report:
   c_group: "C1605"
   target_dioh: 21               # final DIOH (incl. substitutes) below this -> "Review"
   lost_alloc_lookback_weeks: 3  # read this many prior weeks of helper data for risk-of-loss
+  desired_dioh_default: 60      # default for the v1.4 "Desired DIOH" column
 
   required_columns:  # for the input file
     - "SoldTo #"
@@ -107,6 +124,10 @@ report:
       - "AverageDailyIssueOut"
       - "DIOH"
       - "Flag"
+      - "Desired DIOH"                  # NEW ON v1.4
+      - "Qty to order for Desired DIOH" # NEW ON v1.4
+      - "UOM"                           # NEW ON v1.4
+      - "YYYY-MM-DD Notes"              # NEW ON v1.4
       - "Description3"
 
     item_group:
@@ -145,6 +166,7 @@ report:
     - "Dummy ID"
     - "No Issue Out (Last 365 Days)"
     - "VendorItem"
+    - "DIOH_final"  #hide 2026-07-15, this is the DIOH_ig filled with DIOH
     - "Flag"
     - "VendorItem_Repl."
 
@@ -161,6 +183,7 @@ report:
     - "AvailableQty"
     - "OnOrderQty"
     - "BuyUOMMultiplier"
+    - "Qty to order for Desired DIOH"  # NEW ON v1.4 (embedded formula result)
     - "AvailableQty_Repl."
     - "AvailableQty_ig"
     - "OnOrderQty_Repl."
@@ -189,6 +212,13 @@ report:
     - "Description3_Repl."
     - "SoldTo Name"
     - "Manufacturer Name"
+    - "YYYY-MM-DD Notes"
+
+  yellow_header_cols:
+    - "Desired DIOH"
+    - "Qty to order for Desired DIOH"
+    - "UOM"
+    - "YYYY-MM-DD Notes"
 
   # ── styler (consumed by src/excel.py) ──
   font: { name: "Arial", size: 8 }
@@ -215,6 +245,19 @@ report:
       - "Qty available to order"
       - "YearWeek"
 
+  # ── Live Excel formulas (consumed by src/excel.py) ──
+  # Each {Column Name} token is replaced with that column's live cell reference
+  # for the current row. only_when limits the formula to rows whose gate column
+  # equals the value. "UOM" deliberately references the "SalesUOM Code" cell
+  # (column F) so users can see the sales UOM is used, not DefaultBuyUOM.
+  formula_cols:
+    "Qty to order for Desired DIOH":
+      template: "=(({Desired DIOH}-{DIOH})*{AverageDailyIssueOut}-{OnOrderQty})/{Material Qty}"
+      only_when: { column: "Matched IMDC + IPYC", value: "Matched" }
+    "UOM":
+      template: "={SalesUOM Code}"
+      only_when: { column: "Matched IMDC + IPYC", value: "Matched" }
+
 # ──────────────────────────────────────────────
 # Notification — email recipients (copied from Medline PBO)
 # ──────────────────────────────────────────────
@@ -232,6 +275,9 @@ notification:
   failure_recipients:
     - "dli2@montefiore.org"
     # - "abhashem@montefiore.org"
+  test_recipients:
+    - "dli2@montefiore.org"
+    - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging
