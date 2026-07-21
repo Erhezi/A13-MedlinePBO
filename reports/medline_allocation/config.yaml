@@ -25,7 +25,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.4"
+  version: "1.5"
   # --------------------  new in v1.4 - 2026-07-15 --------------------
   # - add a desired-DIOH order block (yellow header, report.yellow_header_cols),
   #   populated for every row with an Item number resolved and matched to
@@ -42,6 +42,17 @@ report:
   # - Reporting: columns added under the yellow desired-DIOH header in the item
   #   group; "Qty to order for Desired DIOH" thousands-formatted
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.5 - 2026-07-17 --------------------
+  # - "Desired DIOH" no longer defaults to a fixed number: it is the number of
+  #   days from the run date to report.desired_dioh_target_date (2026-10-20),
+  #   so the target stays anchored to that calendar date as runs approach it
+  # - new "OverStocked" column in front of "Desired DIOH": on-hand exhausted on
+  #   or before report.overstock_check_date (2026-10-13), i.e.
+  #   today + DIOH <= 2026-10-13 -> 'Not overstocked', otherwise 'Overstocked'
+  # - "Qty to order for Desired DIOH" formula guarded in-sheet: 0 when
+  #   AverageDailyIssueOut is blank/non-numeric or 0, and negative results
+  #   are floored at 0
+  # ---------------------------------------------------------------------
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation'
   file_name_split_token: "Report"
   output_basename: "Processed_Medline_Product_Allocation"
@@ -50,7 +61,10 @@ report:
   c_group: "C1605"
   target_dioh: 21               # final DIOH (incl. substitutes) below this -> "Review"
   lost_alloc_lookback_weeks: 3  # read this many prior weeks of helper data for risk-of-loss
-  desired_dioh_default: 60      # default for the v1.4 "Desired DIOH" column
+  # v1.5 — "Desired DIOH" = days from the run date to desired_dioh_target_date;
+  # "OverStocked" compares today + DIOH against overstock_check_date.
+  desired_dioh_target_date: "2026-10-20"
+  overstock_check_date: "2026-10-13"
 
   required_columns:  # for the input file
     - "SoldTo #"
@@ -124,6 +138,7 @@ report:
       - "AverageDailyIssueOut"
       - "DIOH"
       - "Flag"
+      - "OverStocked"                   # NEW ON v1.5
       - "Desired DIOH"                  # NEW ON v1.4
       - "Qty to order for Desired DIOH" # NEW ON v1.4
       - "UOM"                           # NEW ON v1.4
@@ -215,6 +230,7 @@ report:
     - "YYYY-MM-DD Notes"
 
   yellow_header_cols:
+    - "OverStocked"                    # NEW ON v1.5
     - "Desired DIOH"
     - "Qty to order for Desired DIOH"
     - "UOM"
@@ -250,9 +266,11 @@ report:
   # for the current row. only_when limits the formula to rows whose gate column
   # equals the value. "UOM" deliberately references the "SalesUOM Code" cell
   # (column F) so users can see the sales UOM is used, not DefaultBuyUOM.
+  # v1.5 guards: blank/non-numeric or zero AverageDailyIssueOut -> 0, and
+  # negative results are floored at 0 via MAX.
   formula_cols:
     "Qty to order for Desired DIOH":
-      template: "=(({Desired DIOH}-{DIOH})*{AverageDailyIssueOut}-{OnOrderQty})/{Material Qty}"
+      template: "=IF(OR(NOT(ISNUMBER({AverageDailyIssueOut})),{AverageDailyIssueOut}=0),0,MAX(0,(({Desired DIOH}-{DIOH})*{AverageDailyIssueOut}-{OnOrderQty})/{Material Qty}))"
       only_when: { column: "Matched IMDC + IPYC", value: "Matched" }
     "UOM":
       template: "={SalesUOM Code}"

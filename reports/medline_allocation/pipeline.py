@@ -105,7 +105,9 @@ def run(config, secrets, ctx):
         df_full, df_rmd, df_small, current_yearweek, timestamp_value,
     )
     df_output_all = transform.add_desired_dioh_columns(
-        df_output_all, desired_dioh_default=report_cfg.get("desired_dioh_default", 60),
+        df_output_all,
+        target_date=report_cfg.get("desired_dioh_target_date", "2026-10-20"),
+        overstock_date=report_cfg.get("overstock_check_date", "2026-10-13"),
     )
     ctx.progress.step(f"Data transformed — {len(df_output_all)} output rows")
 

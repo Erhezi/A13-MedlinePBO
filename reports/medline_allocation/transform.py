@@ -7,6 +7,8 @@ sets differ (Allocation keys off ``Material #``/``Item`` and carries no
 rather than shared.
 """
 
+from datetime import date
+
 import numpy as np
 import pandas as pd
 
@@ -284,8 +286,16 @@ def assemble_output(df_full, df_rmd, df_small, current_yearweek, timestamp_value
     return pd.concat([df_output, other_weeks], ignore_index=True)
 
 
-def add_desired_dioh_columns(df_output, desired_dioh_default=60):
-    """Add the v1.4 desired-DIOH order columns.
+def add_desired_dioh_columns(df_output, target_date="2026-10-20", overstock_date="2026-10-13"):
+    """Add the desired-DIOH order columns.
+
+    ``Desired DIOH`` (v1.5) is no longer a fixed default: it is the number of
+    days from the run date to ``target_date``, floored at 0 once that date has
+    passed, so every run re-anchors to the same calendar target.
+    ``OverStocked`` (v1.5) sits in front of ``Desired DIOH`` and labels each
+    matched row: on-hand exhausted on or before ``overstock_date``
+    (today + DIOH <= overstock_date) -> 'Not overstocked', otherwise
+    'Overstocked'; rows without a usable DIOH stay blank.
 
     Populated for every row whose ``Item`` resolved and matched inventory
     (``Matched IMDC + IPYC`` == 'Matched'). ``Qty to order for Desired DIOH``
@@ -299,7 +309,17 @@ def add_desired_dioh_columns(df_output, desired_dioh_default=60):
     df = df_output.copy()
     matched_mask = df["Item"].notna() & (df["Matched IMDC + IPYC"] == "Matched")
 
-    df["Desired DIOH"] = np.where(matched_mask, desired_dioh_default, np.nan)
+    today = date.today()
+    desired_dioh = max((pd.to_datetime(target_date).date() - today).days, 0)
+    overstock_days = (pd.to_datetime(overstock_date).date() - today).days
+
+    dioh = pd.to_numeric(df["DIOH"], errors="coerce")
+    df["OverStocked"] = np.select(
+        [matched_mask & dioh.le(overstock_days), matched_mask & dioh.notna()],
+        ["Not overstocked", "Overstocked"],
+        default="",
+    )
+    df["Desired DIOH"] = np.where(matched_mask, desired_dioh, np.nan)
     df["Qty to order for Desired DIOH"] = np.nan
     df["UOM"] = ""
     df["YYYY-MM-DD Notes"] = ""

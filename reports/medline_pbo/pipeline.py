@@ -110,7 +110,9 @@ def run(config, secrets, ctx):
         prepared_tables["ipyc_items"],
     )
     df_output = add_desired_dioh_columns(
-        df_output, desired_dioh_default=report_cfg.get("desired_dioh_default", 30),
+        df_output,
+        target_date=report_cfg.get("desired_dioh_target_date", "2026-10-20"),
+        overstock_date=report_cfg.get("overstock_check_date", "2026-10-13"),
     )
     ctx.progress.step(f"Data transformed — {len(df_output)} output rows")
 

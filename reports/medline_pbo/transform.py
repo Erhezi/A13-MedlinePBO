@@ -4,7 +4,7 @@ Every public function in this module takes DataFrames in and returns a
 DataFrame out, keeping the pipeline testable and composable.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
@@ -474,8 +474,21 @@ def assemble_output(df_full, df_review_to_merge, timestamp_value, ipyc_items):
     return df_output
 
 
-def add_desired_dioh_columns(df_output, desired_dioh_default=30, review_flag_value="Review"):
-    """Add the v1.6 desired-DIOH order columns (populated for review rows only).
+def add_desired_dioh_columns(
+    df_output,
+    target_date="2026-10-20",
+    overstock_date="2026-10-13",
+    review_flag_value="Review",
+):
+    """Add the desired-DIOH order columns (populated for review rows only).
+
+    ``Desired DIOH`` (v1.7) is no longer a fixed default: it is the number of
+    days from the run date to ``target_date``, floored at 0 once that date has
+    passed, so every run re-anchors to the same calendar target.
+    ``OverStocked`` (v1.7) sits in front of ``Desired DIOH`` and labels each
+    review row: on-hand exhausted on or before ``overstock_date``
+    (today + DIOH <= overstock_date) -> 'Not overstocked', otherwise
+    'Overstocked'; rows without a usable DIOH stay blank.
 
     ``Qty to order for Desired DIOH`` is intentionally left blank here — its
     values are written as live Excel formulas at export time (see
@@ -487,7 +500,17 @@ def add_desired_dioh_columns(df_output, desired_dioh_default=30, review_flag_val
     df = df_output.copy()
     review_mask = df["Flag"] == review_flag_value
 
-    df["Desired DIOH"] = np.where(review_mask, desired_dioh_default, np.nan)
+    today = date.today()
+    desired_dioh = max((pd.to_datetime(target_date).date() - today).days, 0)
+    overstock_days = (pd.to_datetime(overstock_date).date() - today).days
+
+    dioh = pd.to_numeric(df["DIOH"], errors="coerce")
+    df["OverStocked"] = np.select(
+        [review_mask & dioh.le(overstock_days), review_mask & dioh.notna()],
+        ["Not overstocked", "Overstocked"],
+        default="",
+    )
+    df["Desired DIOH"] = np.where(review_mask, desired_dioh, np.nan)
     df["Qty to order for Desired DIOH"] = np.nan
     df["UOM"] = np.where(review_mask, df["DefaultBuyUOM"], "")
     df["YYYY-MM-DD Notes"] = ""

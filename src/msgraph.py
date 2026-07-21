@@ -11,6 +11,16 @@ DEFAULT_ATTACHMENT_PREFIX = ""
 DEFAULT_ATTACHMENT_EXTENSIONS = (".xlsx",)
 
 
+def _format_notification_date(value):
+    """Format a configured ISO date for a human-readable email body."""
+    try:
+        return datetime.fromisoformat(str(value)).strftime("%B %d, %Y").replace(
+            " 0", " "
+        )
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _raise_for_status_with_details(response, context):
     try:
         response.raise_for_status()
@@ -311,12 +321,30 @@ def send_success_notification(config, secrets, output_path):
         return
     report_name = notification.get("report_name", "Report")
     cc_recipients = notification.get("success_cc_recipients", [])
+    report_cfg = config.get("report", {})
+    desired_dioh_target_date = _format_notification_date(
+        report_cfg.get("desired_dioh_target_date", "2026-10-20")
+    )
+    overstock_check_date = _format_notification_date(
+        report_cfg.get("overstock_check_date", "2026-10-13")
+    )
     send_email_with_attachment(
         config,
         secrets,
         recipients,
         subject=f"{report_name} Report — Success",
-        body_text=f"The {report_name} report is analyzed and enriched.",
+        body_text=(
+            f"The {report_name} report has been generated successfully and is attached.\n\n"
+            "Current-version calculation notes:\n"
+            f"- Desired DIOH is calculated as the number of days between the report "
+            f"generation date and {desired_dioh_target_date}.\n"
+            f"- ‘Overstocked’ and ‘Not overstocked’ are based on the current burn-rate "
+            f"projection against {overstock_check_date}:\n"
+            f"  - ‘Not overstocked’ means projected stock is exhausted on or before "
+            f"{overstock_check_date}.\n"
+            f"  - ‘Overstocked’ means projected stock is expected to last beyond "
+            f"{overstock_check_date}."
+        ),
         attachment_path=output_path,
         cc_recipients=cc_recipients,
     )
