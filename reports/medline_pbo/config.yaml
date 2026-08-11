@@ -299,6 +299,8 @@ notification:
     - "wmcelwaine@montefiore.org"
     - "josdanie@montefiore.org"
     - "RMATIAS@montefiore.org"
+    - "mkose@montefiore.org" #added 2026-08-11 for additional distribution
+    - "knacpil@montefiore.org" #added 2026-08-11 for additional distribution
   success_cc_recipients:
     - "mcondoleo@montefiore.org"
     - "abhashem@montefiore.org"
