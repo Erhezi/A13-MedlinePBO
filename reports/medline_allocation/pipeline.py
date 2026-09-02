@@ -14,7 +14,11 @@ from src.msgraph import get_latest_excel_attachment
 
 from reports.medline_allocation import ingestion, persistence, transform
 from reports.medline_allocation.queries import ALLOCATION_TEMPLATES, LOST_ALLOC_SQL
-from reports.medline_allocation.weeks import get_prior_x_week_yearweek
+from reports.medline_allocation.weeks import (
+    get_prior_x_week_yearweek,
+    get_week_start,
+    week_starts_in_previous_month,
+)
 
 # Stages this pipeline reports; the runner adds 3 framing stages
 # (config load, success notify, ETL-health) for a total of [1/9]..[9/9].
@@ -25,7 +29,14 @@ def run(config, secrets, ctx):
     email_cfg = config["email"]
     report_cfg = config["report"]
 
-    # ── 1. Download latest Excel attachment ──
+    # ── 1. Download latest Excel attachment(s) ──
+    # The current-month export only carries allocation weeks that START in this
+    # month, so on a run whose ISO week started in the previous month (e.g.
+    # 2026-09-02, week of 2026-08-31) it holds no row for the week in progress
+    # and the report's YearWeek filter would come up empty. Medline sends a
+    # companion "Previous Month" export to the same Inbox under a subject that
+    # also contains the keyword, so both files are matched by attachment name
+    # (email.attachment_exclude / email.previous_month) rather than by subject.
     save_path, latest_file = get_latest_excel_attachment(
         keyword=email_cfg["keyword"],
         destination_path=email_cfg["destination_path"],
@@ -35,12 +46,36 @@ def run(config, secrets, ctx):
     if save_path is None:
         raise FileNotFoundError("No attachment found. Aborting.")
     ctx.source_file_path = save_path
-    ctx.progress.step(f"Email attachment downloaded: {latest_file}")
 
-    # ── 2. Ingest & cleanse ──
-    df = ingestion.read_allocation_file(save_path)
-    ingestion.validate_columns(df, report_cfg["required_columns"])
-    df = ingestion.remove_footer(df)
+    source_paths = [save_path]
+    if week_starts_in_previous_month():
+        prev_cfg = email_cfg.get("previous_month", {})
+        prev_path, prev_file = get_latest_excel_attachment(
+            keyword=prev_cfg.get("keyword", email_cfg["keyword"]),
+            destination_path=email_cfg["destination_path"],
+            config=config,
+            secrets=secrets,
+            attachment_prefix=prev_cfg.get("attachment_prefix", ""),
+            attachment_contains=prev_cfg.get("attachment_contains", []),
+            attachment_exclude=prev_cfg.get("attachment_exclude", []),
+        )
+        if prev_path is None:
+            raise FileNotFoundError(
+                "The current week starts on "
+                f"{get_week_start().isoformat()}, in the previous month, so the "
+                "current-month export does not contain it. No previous-month "
+                "attachment was found to stack with it. Aborting."
+            )
+        source_paths.append(prev_path)
+        ctx.progress.step(
+            f"Email attachments downloaded: {latest_file} + {prev_file} "
+            f"(week of {get_week_start().isoformat()} starts in the previous month)"
+        )
+    else:
+        ctx.progress.step(f"Email attachment downloaded: {latest_file}")
+
+    # ── 2. Ingest & cleanse (previous-month rows stacked under current-month) ──
+    df = ingestion.read_allocation_files(source_paths, report_cfg["required_columns"])
     df = ingestion.apply_jesse_selection(df, c_group=report_cfg["c_group"])
     df = ingestion.make_year_week(df)
     df = ingestion.clean_int_cols(df, report_cfg["int_cols"])

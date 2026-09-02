@@ -19,6 +19,8 @@ This repo runs **two** report pipelines that share common infrastructure:
 
 Both reports run through the single entry point `main.py`, selected with `--report`. Add `--config <path>` only to override a report's default config.
 
+One operational note for **Medline Allocation**: Medline's export only covers allocation weeks whose *start* date falls in the month the file was generated for. On runs whose week started in the previous month (e.g. 2026-09-02, week of 2026-08-31) the report also downloads Medline's companion `Product Allocation Report Previous Month-<stamp>.xls` mail and stacks it under the current-month file, otherwise the week in progress would be missing and the report would come out empty. On those days the run needs **both** mails in the inbox; if the previous-month one is absent the run fails with a message saying so.
+
 Shared code lives in `src/` (config, secrets, logging, email/Graph, database, the Excel styler, and the run harness). Each report's own steps live in `reports/<report>/`. The original prototyping notebooks are kept (reference only) under `notebook/`. Everything below uses the PBO report as the example; the Allocation report works identically — just swap in its entry script, config, and `.bat`.
 
 ## What This Script Does

@@ -13,7 +13,23 @@ email:
   # The export is a .xls with no fixed name prefix, so match any Excel file.
   attachment_prefix: ""
   attachment_extensions: [".xls", ".xlsx"]
+  # Medline sends a second, companion export ("... Previous Month-<stamp>.xls")
+  # to the same Inbox, under a subject that also contains `keyword`
+  # ("Insight Report : Product Allocation Report Previous Month"). It usually
+  # arrives AFTER the current-month mail, so without this exclusion the
+  # "latest matching attachment" search would pick it up as the main file.
+  attachment_exclude: ["Previous Month"]
   inbox_lookback_days: null   # null = no date cutoff (search the top max_messages)
+
+  # Companion previous-month export — pulled only on runs whose ISO week
+  # started in the previous month (see reports/medline_allocation/weeks.py,
+  # week_starts_in_previous_month). Same subject keyword, same Inbox; only the
+  # attachment name distinguishes it, so match on the name.
+  previous_month:
+    keyword: "Product Allocation Report Previous Month"
+    attachment_prefix: ""
+    attachment_contains: ["Previous Month"]
+    attachment_exclude: []
 
 database:
   driver: "{ODBC Driver 17 for SQL Server}"
@@ -25,7 +41,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.5"
+  version: "1.6"
   # --------------------  new in v1.4 - 2026-07-15 --------------------
   # - add a desired-DIOH order block (yellow header, report.yellow_header_cols),
   #   populated for every row with an Item number resolved and matched to
@@ -52,6 +68,20 @@ report:
   # - "Qty to order for Desired DIOH" formula guarded in-sheet: 0 when
   #   AverageDailyIssueOut is blank/non-numeric or 0, and negative results
   #   are floored at 0
+  # ---------------------------------------------------------------------
+  # --------------------  new in v1.6 - 2026-09-02 --------------------
+  # - Weeks that start in the previous month are no longer empty. The vendor
+  #   export only carries allocation weeks whose START date falls in the month
+  #   it was generated for, so on a run like 2026-09-02 (week of 2026-08-31)
+  #   the current-month file had no row for the week in progress and the
+  #   YearWeek row filter hid every row. Those runs now also download the
+  #   companion "Product Allocation Report Previous Month-<stamp>.xls" export
+  #   and stack it under the current-month file before the pipeline runs.
+  # - The two exports are disjoint (a week's start date falls in exactly one
+  #   month), so the stack needs no de-duplication.
+  # - email.attachment_exclude keeps the previous-month file from being picked
+  #   as the main file: it lands in the same Inbox, later in the day, under a
+  #   subject that also contains email.keyword.
   # ---------------------------------------------------------------------
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation'
   file_name_split_token: "Report"

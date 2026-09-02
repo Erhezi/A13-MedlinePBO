@@ -124,13 +124,27 @@ def _list_messages(
     return messages
 
 
-def _is_target_attachment(attachment, attachment_prefix, extensions):
+def _is_target_attachment(
+    attachment, attachment_prefix, extensions, contains=(), exclude=()
+):
+    """Match a Graph attachment against the configured name rules.
+
+    ``contains``/``exclude`` are substring lists that let one mailbox carry
+    sibling exports whose names differ only mid-string — e.g. the Allocation
+    report's "Product Allocation Report-..." and its companion
+    "Product Allocation Report Previous Month-...", which share a subject
+    keyword and a name prefix.
+    """
     file_name = attachment.get("name", "").lower()
-    return (
-        attachment.get("@odata.type") == "#microsoft.graph.fileAttachment"
-        and any(file_name.endswith(ext.lower()) for ext in extensions)
-        and file_name.startswith(attachment_prefix.lower())
-    )
+    if attachment.get("@odata.type") != "#microsoft.graph.fileAttachment":
+        return False
+    if not any(file_name.endswith(ext.lower()) for ext in extensions):
+        return False
+    if not file_name.startswith(attachment_prefix.lower()):
+        return False
+    if any(token.lower() not in file_name for token in contains):
+        return False
+    return not any(token.lower() in file_name for token in exclude)
 
 
 def _save_attachment(attachment, destination_path):
@@ -154,6 +168,8 @@ def _find_matching_attachment(
     destination_path,
     attachment_prefix,
     extensions,
+    contains=(),
+    exclude=(),
 ):
     for message in messages:
         print(
@@ -169,7 +185,9 @@ def _find_matching_attachment(
         attachments = attach_resp.json().get("value", [])
 
         for attachment in attachments:
-            if _is_target_attachment(attachment, attachment_prefix, extensions):
+            if _is_target_attachment(
+                attachment, attachment_prefix, extensions, contains, exclude
+            ):
                 print(
                     "Target Found: "
                     f"{message.get('subject', '')} ({message['receivedDateTime']})"
@@ -179,12 +197,26 @@ def _find_matching_attachment(
     return None, None
 
 
-def get_latest_excel_attachment(keyword, destination_path, config, secrets):
+def get_latest_excel_attachment(
+    keyword,
+    destination_path,
+    config,
+    secrets,
+    attachment_prefix=None,
+    attachment_contains=None,
+    attachment_exclude=None,
+):
     """Download the newest matching Excel attachment from Graph mail.
 
-    Matching is config-driven (``config['email']``): ``attachment_prefix`` and
-    ``attachment_extensions`` constrain the file name; ``inbox_lookback_days``
-    (or null for no limit) constrains how far back to search.
+    Matching is config-driven (``config['email']``): ``attachment_prefix``,
+    ``attachment_contains``, ``attachment_exclude`` and ``attachment_extensions``
+    constrain the file name; ``inbox_lookback_days`` (or null for no limit)
+    constrains how far back to search.
+
+    The three name filters can be overridden per call so one mailbox can serve
+    more than one export — the Allocation report pulls its current-month file
+    and its companion "Previous Month" file from the same Inbox and the same
+    subject keyword, separated only by ``attachment_contains``/``_exclude``.
 
     Returns
     -------
@@ -201,7 +233,14 @@ def get_latest_excel_attachment(keyword, destination_path, config, secrets):
     graph = email_cfg["graph_endpoint"]
     user = email_cfg["from_email"]
     max_messages = email_cfg.get("max_messages", 100)
-    attachment_prefix = email_cfg.get("attachment_prefix", DEFAULT_ATTACHMENT_PREFIX)
+    if attachment_prefix is None:
+        attachment_prefix = email_cfg.get(
+            "attachment_prefix", DEFAULT_ATTACHMENT_PREFIX
+        )
+    if attachment_contains is None:
+        attachment_contains = email_cfg.get("attachment_contains", [])
+    if attachment_exclude is None:
+        attachment_exclude = email_cfg.get("attachment_exclude", [])
     extensions = email_cfg.get(
         "attachment_extensions", list(DEFAULT_ATTACHMENT_EXTENSIONS)
     )
@@ -230,15 +269,23 @@ def get_latest_excel_attachment(keyword, destination_path, config, secrets):
         destination_path,
         attachment_prefix,
         extensions,
+        attachment_contains,
+        attachment_exclude,
     )
     if save_path is not None:
         return save_path, file_name
 
+    name_rules = (
+        f"starting with '{attachment_prefix}' and ending with one of {extensions}"
+    )
+    if attachment_contains:
+        name_rules += f", containing all of {list(attachment_contains)}"
+    if attachment_exclude:
+        name_rules += f", containing none of {list(attachment_exclude)}"
     error_message = (
         "Unable to find a matching attachment. "
         f"Inbox search required subject containing '{keyword}' within {lookback_note} "
-        f"and attachment name starting with '{attachment_prefix}' and ending with "
-        f"one of {extensions}."
+        f"and attachment name {name_rules}."
     )
     print(f"ERROR: {error_message}")
     raise FileNotFoundError(error_message)

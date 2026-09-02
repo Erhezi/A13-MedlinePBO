@@ -2,6 +2,11 @@
 
 The source is a system-exported ``.xls`` Product Allocation Report with a footer
 of summary rows (blank ``SoldTo #``) that must be trimmed before processing.
+
+An export only covers allocation weeks whose *start* date falls in the month it
+was generated for, so a run whose ISO week started in the previous month must
+stack the companion "Previous Month" export underneath the current-month one —
+see ``read_allocation_files`` and ``weeks.week_starts_in_previous_month``.
 """
 
 import numpy as np
@@ -11,6 +16,35 @@ import pandas as pd
 def read_allocation_file(file_path):
     """Read the Product Allocation .xls export as all-string columns."""
     return pd.read_excel(file_path, engine="calamine", dtype=str)
+
+
+def read_allocation_files(file_paths, required_columns):
+    """Read, validate, and footer-trim each export in *file_paths*, then stack.
+
+    Each export carries its own summary footer, so trimming happens per file and
+    the frames are concatenated afterwards with a fresh index (``Dummy ID`` and
+    ``remove_footer`` both depend on a clean 0..n-1 index). Later frames are
+    aligned to the first frame's columns so a schema change on one side cannot
+    silently introduce all-blank columns.
+
+    The exports are disjoint by construction — a week's start date falls in
+    exactly one month — so the stack needs no de-duplication.
+    """
+    frames = []
+    for file_path in file_paths:
+        df = read_allocation_file(file_path)
+        validate_columns(df, required_columns)
+        frames.append(remove_footer(df))
+
+    if len(frames) == 1:
+        return frames[0].reset_index(drop=True)
+
+    base_columns = frames[0].columns
+    aligned = [frames[0]] + [f.reindex(columns=base_columns) for f in frames[1:]]
+    stacked = pd.concat(aligned, ignore_index=True)
+    row_counts = " + ".join(str(len(f)) for f in frames)
+    print(f"Stacked {len(frames)} files: {row_counts} = {len(stacked)} rows.")
+    return stacked
 
 
 def validate_columns(df, required_columns):
