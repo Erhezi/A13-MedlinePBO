@@ -309,7 +309,7 @@ notification:
     - "abhashem@montefiore.org"
   test_recipients:
     - "dli2@montefiore.org"
-    # - "abhashem@montefiore.org"
+    - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging
