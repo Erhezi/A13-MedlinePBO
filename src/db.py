@@ -40,7 +40,7 @@ def get_engine(conn_cfg):
 
 
 def get_connection(config):
-    """Open a pyodbc connection to the main PRIME database (config['database'])."""
+    """Open a pyodbc connection to the main source database (config['database'])."""
     return get_pyodbc_connection(config["database"])
 
 
@@ -83,7 +83,7 @@ def insert_etl_health(
 ):
     """Insert a row into [<schema>].[<table>] on the ETL-health server.
 
-    Uses a *separate* connection from the main PRIME database.
+    Uses a *separate* connection from the main source-data database.
     """
     etl = config["etl_health"]
     conn = pyodbc.connect(

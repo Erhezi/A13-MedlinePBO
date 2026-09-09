@@ -3,7 +3,7 @@
 
 Verifies that the current machine has:
   1. Read/write access to the I: drive output directory
-  2. Database connectivity to PRIME and ETL Health servers
+  2. Database connectivity to the PLM source and ETL Health databases
   3. MS Graph authentication and API access
 
 Usage:
@@ -102,51 +102,53 @@ def test_database(config):
     db_cfg = config["database"]
     etl_cfg = config["etl_health"]
 
-    # 2a — connect to PRIME
-    prime_conn = None
-    print(f"  PRIME server: {db_cfg['server']}  database: {db_cfg['database']}")
+    # 2a — connect to the PLM source database
+    source_conn = None
+    print(f"  PLM source server: {db_cfg['server']}  database: {db_cfg['database']}")
     try:
-        prime_conn = get_connection(config)
-        _record("2a  Connect to PRIME", True)
+        source_conn = get_connection(config)
+        _record("2a  Connect to PLM source DB", True)
     except (pyodbc.Error, Exception) as exc:
-        _record("2a  Connect to PRIME", False, str(exc))
+        _record("2a  Connect to PLM source DB", False, str(exc))
 
-    # 2b — read INVENTORY_LOCATION
-    if prime_conn:
+    # 2b — read infor.ITEM_LOCATION
+    if source_conn:
         try:
-            cursor = prime_conn.cursor()
+            cursor = source_conn.cursor()
             cursor.execute(
-                r"SELECT TOP 1 * FROM [DM_MONTYNT\dli2].INVENTORY_LOCATION"
+                "SELECT TOP 1 * FROM PLMPreprocessorShared.infor.ITEM_LOCATION"
             )
             row = cursor.fetchone()
             _record(
-                "2b  Read INVENTORY_LOCATION",
+                "2b  Read infor.ITEM_LOCATION",
                 row is not None,
                 "" if row else "Query returned no rows.",
             )
         except (pyodbc.Error, Exception) as exc:
-            _record("2b  Read INVENTORY_LOCATION", False, str(exc))
+            _record("2b  Read infor.ITEM_LOCATION", False, str(exc))
     else:
-        _record("2b  Read INVENTORY_LOCATION", False, "Skipped — no PRIME connection.")
+        _record(
+            "2b  Read infor.ITEM_LOCATION", False, "Skipped — no source connection."
+        )
 
-    # 2c — read plm.Itemlink
-    if prime_conn:
+    # 2c — read PLM.ItemLink
+    if source_conn:
         try:
-            cursor = prime_conn.cursor()
-            cursor.execute("SELECT TOP 1 * FROM plm.Itemlink")
+            cursor = source_conn.cursor()
+            cursor.execute("SELECT TOP 1 * FROM PLM.PLM.ItemLink")
             row = cursor.fetchone()
             _record(
-                "2c  Read plm.Itemlink",
+                "2c  Read PLM.ItemLink",
                 row is not None,
                 "" if row else "Query returned no rows.",
             )
         except (pyodbc.Error, Exception) as exc:
-            _record("2c  Read plm.Itemlink", False, str(exc))
+            _record("2c  Read PLM.ItemLink", False, str(exc))
     else:
-        _record("2c  Read plm.Itemlink", False, "Skipped — no PRIME connection.")
+        _record("2c  Read PLM.ItemLink", False, "Skipped — no source connection.")
 
-    if prime_conn:
-        prime_conn.close()
+    if source_conn:
+        source_conn.close()
 
     # 2d — connect to ETL Health server
     print(f"  ETL Health server: {etl_cfg['server']}  database: {etl_cfg['database']}")

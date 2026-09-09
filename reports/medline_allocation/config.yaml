@@ -31,10 +31,14 @@ email:
     attachment_contains: ["Previous Month"]
     attachment_exclude: []
 
+# The PLM app moved to the PROCDATASRVPROD instance, so the source reads now
+# live alongside etl_health / persistence. The tables span two databases there
+# (`PLM` and `PLMPreprocessorShared`), so the SQL templates name every table in
+# full (database.schema.table) and `database` below is only the initial catalog.
 database:
   driver: "{ODBC Driver 17 for SQL Server}"
-  server: "MISCPrdAdhocDB"
-  database: "PRIME"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "PLM"
   trusted_connection: "yes"
   locations:
     - "IMDCSTRM"
