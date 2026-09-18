@@ -45,7 +45,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.6"
+  version: "1.7"
   # --------------------  new in v1.4 - 2026-07-15 --------------------
   # - add a desired-DIOH order block (yellow header, report.yellow_header_cols),
   #   populated for every row with an Item number resolved and matched to
@@ -87,6 +87,9 @@ report:
   #   as the main file: it lands in the same Inbox, later in the day, under a
   #   subject that also contains email.keyword.
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.7 - 2026-09-02 --------------------
+  # - Burndown project date updated to 2026-10-27 (postponed 1 week from 2026-10-20)
+  # ---------------------------------------------------------------------
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation'
   file_name_split_token: "Report"
   output_basename: "Processed_Medline_Product_Allocation"
@@ -97,8 +100,9 @@ report:
   lost_alloc_lookback_weeks: 3  # read this many prior weeks of helper data for risk-of-loss
   # v1.5 — "Desired DIOH" = days from the run date to desired_dioh_target_date;
   # "OverStocked" compares today + DIOH against overstock_check_date.
-  desired_dioh_target_date: "2026-10-20"
-  overstock_check_date: "2026-10-13"
+  # v1.7 updated the burndown project date to 2026-10-27 (postponed 1 week from 2026-10-20)
+  desired_dioh_target_date: "2026-10-27"
+  overstock_check_date: "2026-10-20"
 
   required_columns:  # for the input file
     - "SoldTo #"
@@ -331,7 +335,7 @@ notification:
     - "abhashem@montefiore.org"
   test_recipients:
     - "dli2@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging

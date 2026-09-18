@@ -286,7 +286,7 @@ def assemble_output(df_full, df_rmd, df_small, current_yearweek, timestamp_value
     return pd.concat([df_output, other_weeks], ignore_index=True)
 
 
-def add_desired_dioh_columns(df_output, target_date="2026-10-20", overstock_date="2026-10-13"):
+def add_desired_dioh_columns(df_output, target_date="2026-10-27", overstock_date="2026-10-20"):
     """Add the desired-DIOH order columns.
 
     ``Desired DIOH`` (v1.5) is no longer a fixed default: it is the number of

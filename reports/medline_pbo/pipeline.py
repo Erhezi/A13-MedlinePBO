@@ -111,8 +111,8 @@ def run(config, secrets, ctx):
     )
     df_output = add_desired_dioh_columns(
         df_output,
-        target_date=report_cfg.get("desired_dioh_target_date", "2026-10-20"),
-        overstock_date=report_cfg.get("overstock_check_date", "2026-10-13"),
+        target_date=report_cfg.get("desired_dioh_target_date", "2026-10-27"),
+        overstock_date=report_cfg.get("overstock_check_date", "2026-10-20"),
     )
     ctx.progress.step(f"Data transformed — {len(df_output)} output rows")
 

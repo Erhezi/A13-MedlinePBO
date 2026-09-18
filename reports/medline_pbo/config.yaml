@@ -29,7 +29,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.7"
+  version: "1.8"
   # --------------------  new in v1.4 - 2026-03-18 --------------------
   # - Multi-location aggregation: IMDCSTRM + IPYCSTRM combined for inventory
   #   and usage so metrics reflect both sites.
@@ -72,6 +72,9 @@ report:
   #   AverageDailyIssueOut is blank/non-numeric or 0, and negative results
   #   are floored at 0
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.8 - 2026-09-02 --------------------
+  # - Burndown project date updated to 2026-10-27 (postponed 1 week from 2026-10-20)
+  # ---------------------------------------------------------------------
 
   review_threshold: -10 # in days
   # basically this means we need to have at least 10 days of coverage by the estimated available date. 
@@ -113,8 +116,9 @@ report:
 
   # v1.7 — "Desired DIOH" = days from the run date to desired_dioh_target_date;
   # "OverStocked" compares today + DIOH against overstock_check_date.
-  desired_dioh_target_date: "2026-10-20"
-  overstock_check_date: "2026-10-13"
+  # v1.8 — burndown project target dates updated to 2026-10-27 (postponed 1 week from 2026-10-20)
+  desired_dioh_target_date: "2026-10-27"
+  overstock_check_date: "2026-10-20"
 
   required_columns: # for the input file
     - "Risk Level"
@@ -313,7 +317,7 @@ notification:
     - "abhashem@montefiore.org"
   test_recipients:
     - "dli2@montefiore.org"
-    - "abhashem@montefiore.org"
+    # - "abhashem@montefiore.org"
 
 # ──────────────────────────────────────────────
 # Logging
