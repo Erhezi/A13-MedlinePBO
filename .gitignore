@@ -15,6 +15,7 @@ __pycache__/
 .env
 .env.*
 .env copy
+.env copy 2
 # Keep example env file tracked
 !.env.example
 
