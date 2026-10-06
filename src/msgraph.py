@@ -369,31 +369,39 @@ def send_success_notification(config, secrets, output_path):
     report_name = notification.get("report_name", "Report")
     cc_recipients = notification.get("success_cc_recipients", [])
     report_cfg = config.get("report", {})
+    body_text = f"The {report_name} report has been generated successfully and is attached."
+    # The DIOH notes only apply to reports that compute Desired DIOH (PBO and
+    # Allocation); a pure data-load report such as Fill-Kill omits the key.
+    if "desired_dioh_target_date" in report_cfg:
+        body_text += "\n\n" + _dioh_notes(report_cfg)
+    send_email_with_attachment(
+        config,
+        secrets,
+        recipients,
+        subject=f"{report_name} Report — Success",
+        body_text=body_text,
+        attachment_path=output_path,
+        cc_recipients=cc_recipients,
+    )
+
+
+def _dioh_notes(report_cfg):
     desired_dioh_target_date = _format_notification_date(
         report_cfg.get("desired_dioh_target_date", "2026-10-27")
     )
     overstock_check_date = _format_notification_date(
         report_cfg.get("overstock_check_date", "2026-10-20")
     )
-    send_email_with_attachment(
-        config,
-        secrets,
-        recipients,
-        subject=f"{report_name} Report — Success",
-        body_text=(
-            f"The {report_name} report has been generated successfully and is attached.\n\n"
-            "Current-version calculation notes:\n"
-            f"- Desired DIOH is calculated as the number of days between the report "
-            f"generation date and {desired_dioh_target_date}.\n"
-            f"- ‘Overstocked’ and ‘Not overstocked’ are based on the current burn-rate "
-            f"projection against {overstock_check_date}:\n"
-            f"  - ‘Not overstocked’ means projected stock is exhausted on or before "
-            f"{overstock_check_date}.\n"
-            f"  - ‘Overstocked’ means projected stock is expected to last beyond "
-            f"{overstock_check_date}."
-        ),
-        attachment_path=output_path,
-        cc_recipients=cc_recipients,
+    return (
+        "Current-version calculation notes:\n"
+        f"- Desired DIOH is calculated as the number of days between the report "
+        f"generation date and {desired_dioh_target_date}.\n"
+        f"- ‘Overstocked’ and ‘Not overstocked’ are based on the current burn-rate "
+        f"projection against {overstock_check_date}:\n"
+        f"  - ‘Not overstocked’ means projected stock is exhausted on or before "
+        f"{overstock_check_date}.\n"
+        f"  - ‘Overstocked’ means projected stock is expected to last beyond "
+        f"{overstock_check_date}."
     )
 
 

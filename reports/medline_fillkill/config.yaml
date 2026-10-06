@@ -1,0 +1,88 @@
+# ──────────────────────────────────────────────
+# Medline Fill-Kill Pipeline — Configuration
+#   Hourly (07:00–23:00) incremental load: newest mailed export ->
+#   [MedlineFillKill].[medlinefillkill_stg] -> upsert into
+#   [MedlineFillKill].[MedlineFillKill] on (Sales Order #, Order Line #).
+# ──────────────────────────────────────────────
+
+email:
+  aad_endpoint: "https://login.microsoftonline.com"
+  graph_endpoint: "https://graph.microsoft.com"
+  from_email: "procurementdatateam@montefiore.org"
+  # TODO confirm once the hourly mail starts arriving — no Fill-Kill mail was
+  # in this Inbox when the report was set up (2026-10-06). The keyword is matched
+  # case-insensitively against the subject; the prefix against the file name
+  # ("WPH - FILL KILL REPORT-2026-09-20-01-02-06.xlsx").
+  keyword: "FILL KILL"
+  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Raw'
+  max_messages: 100
+  attachment_prefix: "WPH - FILL KILL REPORT"
+  attachment_extensions: [".xlsx"]
+  inbox_lookback_days: 1
+
+report:
+  version: "1.0"
+  # --------------------  v1.0 - 2026-10-06 --------------------
+  # - initial load: 11 daily exports (2026-09-20 .. 2026-09-30) stitched and
+  #   upserted via reports/medline_fillkill/backfill.py
+  # - source column names kept as-is (stripped); added PO (leading 10 digits
+  #   of "PO #") and POLine ("PO Line" without leading zeros, INT)
+  # - primary key (Sales Order #, Order Line #)
+  # ---------------------------------------------------------------------
+  # No Excel output. output_dir/output_glob are used only by the monthly
+  # maintenance step, to archive downloaded raw files older than this month.
+  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Raw'
+
+# ──────────────────────────────────────────────
+# Notification — success_recipients is empty on purpose: an hourly success
+# email would be noise. Failures always email. Test mode (--test) redirects
+# both to test_recipients.
+# ──────────────────────────────────────────────
+notification:
+  report_name: "Medline Fill-Kill"
+  success_recipients: []
+  success_cc_recipients: []
+  failure_recipients:
+    - "dli2@montefiore.org"
+  test_recipients:
+    - "dli2@montefiore.org"
+
+# ──────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────
+logging:
+  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Log'
+
+# ──────────────────────────────────────────────
+# Maintenance — monthly cleanup & archiving
+# ──────────────────────────────────────────────
+maintenance:
+  cleanup_day_range: [3, 10]
+  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Archived'
+  output_glob: "WPH - FILL KILL REPORT*.xlsx"
+
+# ──────────────────────────────────────────────
+# ETL Health — process status tracking
+# ──────────────────────────────────────────────
+etl_health:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineReport"
+  table: "ETLHealth"
+  process_name: "Medline Fill-Kill"
+  process_id: "MEDFILLKILL_H_DL"
+  process_frequency: "Hourly"
+
+# ──────────────────────────────────────────────
+# Persistence — staging + target tables (created on first run if missing)
+# ──────────────────────────────────────────────
+persistence:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineFillKill"
+  staging_table: "medlinefillkill_stg"   # truncated + reloaded every run
+  target_table: "MedlineFillKill"        # PK (Sales Order #, Order Line #)

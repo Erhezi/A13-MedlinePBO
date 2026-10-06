@@ -10,14 +10,23 @@ The root folder in the examples below is:
 your_path_to_this_folder\A13-MedlinePBO
 ```
 
-## Project Layout — Two Reports
+## Project Layout — Three Pipelines
 
-This repo runs **two** report pipelines that share common infrastructure:
+This repo runs **three** pipelines that share common infrastructure:
 
 - **Medline PBO** — run `python main.py --report medline_pbo`, config `reports/medline_pbo/config.yaml`, launcher `run_medline_pbo.bat` (scheduled Tue/Thu).
 - **Medline Allocation** — run `python main.py --report medline_allocation`, config `reports/medline_allocation/config.yaml`, launcher `run_medline_allocation.bat` (scheduled Mon–Fri).
+- **Medline Fill-Kill** — run `python main.py --report medline_fillkill`, config `reports/medline_fillkill/config.yaml`, launcher `run_medline_fillkill.bat` (scheduled hourly, 7 AM–11 PM). A data load only, with no Excel output; see below.
 
-Both reports run through the single entry point `main.py`, selected with `--report`. Add `--config <path>` only to override a report's default config.
+All of them run through the single entry point `main.py`, selected with `--report`. Add `--config <path>` only to override a report's default config.
+
+One operational note for **Medline Fill-Kill**: each run downloads the newest `WPH - FILL KILL REPORT-<stamp>.xlsx` attachment, truncates and reloads `SCSFileIngestor.MedlineFillKill.medlinefillkill_stg` with it, then upserts (MERGE) staging into `SCSFileIngestor.MedlineFillKill.MedlineFillKill`, keyed on (`Sales Order #`, `Order Line #`). Source column names are kept as-is; `PO` (first 10 digits of `PO #`) and `POLine` (`PO Line` without leading zeros) are added. Rows are never deleted, and a matched row is only updated (and its `update stamp` bumped) when a value changed, so re-loading a file is harmless. To load files already on disk (initial history, or an hour the schedule missed), stitch them in one pass with:
+
+```powershell
+python -m reports.medline_fillkill.backfill "I:\Procurement PMO\dli2\Medline FillKill\test"   # add --dry-run to parse only
+```
+
+Both tables are created automatically on first run if missing. Success emails are off in `prd` (`notification.success_recipients: []`); failures still email.
 
 One operational note for **Medline Allocation**: Medline's export only covers allocation weeks whose *start* date falls in the month the file was generated for. On runs whose week started in the previous month (e.g. 2026-09-02, week of 2026-08-31) the report also downloads Medline's companion `Product Allocation Report Previous Month-<stamp>.xls` mail and stacks it under the current-month file, otherwise the week in progress would be missing and the report would come out empty. On those days the run needs **both** mails in the inbox; if the previous-month one is absent the run fails with a message saying so.
 
