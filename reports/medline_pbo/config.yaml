@@ -80,7 +80,7 @@ report:
   #   "Customer Prefered Sub" and/or "Substitute Material Number") to
   #   SCSFileIngestor.MedlinePBO.MedlineSubCollection via
   #   MedlinePBO.medlinesubcollection_stg (see the persistence block below and
-  #   reports/medline_pbo/sub_collection.py). History from 2026-08-13 on was
+  #   reports/medline_pbo/persistence.py). History from 2026-08-13 on was
   #   loaded with reports/medline_pbo/backfill_subs.py.
   # ---------------------------------------------------------------------
 
