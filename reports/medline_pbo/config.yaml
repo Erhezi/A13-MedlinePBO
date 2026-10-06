@@ -29,7 +29,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.8"
+  version: "1.9"
   # --------------------  new in v1.4 - 2026-03-18 --------------------
   # - Multi-location aggregation: IMDCSTRM + IPYCSTRM combined for inventory
   #   and usage so metrics reflect both sites.
@@ -74,6 +74,14 @@ report:
   # ---------------------------------------------------------------------
   # --------------------  new in v1.8 - 2026-09-02 --------------------
   # - Burndown project date updated to 2026-10-27 (postponed 1 week from 2026-10-20)
+  # ---------------------------------------------------------------------
+  # --------------------  new in v1.9 - 2026-10-06 --------------------
+  # - Each run also persists Medline's suggested substitutes (rows with a
+  #   "Customer Prefered Sub" and/or "Substitute Material Number") to
+  #   SCSFileIngestor.MedlinePBO.MedlineSubCollection via
+  #   MedlinePBO.medlinesubcollection_stg (see the persistence block below and
+  #   reports/medline_pbo/sub_collection.py). History from 2026-08-13 on was
+  #   loaded with reports/medline_pbo/backfill_subs.py.
   # ---------------------------------------------------------------------
 
   review_threshold: -10 # in days
@@ -346,3 +354,18 @@ etl_health:
   process_name: "Medline PBO"
   process_id: "MEDPBO_W_DL"
   process_frequency: "Tue, Thu"
+
+# ──────────────────────────────────────────────
+# Persistence — substitute collection (v1.9)
+#   Every run stages the file's distinct (Medline Item, Customer Prefered Sub,
+#   Substitute Material Number) rows and upserts them on that key. Tables are
+#   created on first run if missing.
+# ──────────────────────────────────────────────
+persistence:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlinePBO"
+  staging_table: "medlinesubcollection_stg"   # truncated + reloaded every run
+  target_table: "MedlineSubCollection"        # PK (Medline Item, Customer Prefered Sub, Substitute Material Number)
