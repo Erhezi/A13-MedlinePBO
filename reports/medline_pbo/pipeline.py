@@ -1,5 +1,9 @@
 """Medline PBO report pipeline — report-specific steps.
 
+Also persists the file's suggested substitutes to the MedlineSubCollection table
+(see sub_collection.py) right after ingestion, so a database problem fails the
+run before the slower transform.
+
 Returns the saved output path. The shared runner (src/runner.py) wraps this with
 logging, success/failure notification, ETL-health logging, and maintenance.
 """
@@ -8,6 +12,7 @@ from src.db import get_connection, fetch_tables
 from src.excel import reorder_columns, build_output_filename, apply_inventory_styling
 from src.msgraph import get_latest_excel_attachment
 
+from reports.medline_pbo import sub_collection
 from reports.medline_pbo.ingestion import (
     read_pbo_file,
     validate_columns,
@@ -31,8 +36,8 @@ from reports.medline_pbo.transform import (
 )
 
 # Stages this pipeline reports; the runner adds 3 framing stages
-# (config load, success notify, ETL-health) for a total of [1/8]..[8/8].
-STEP_COUNT = 5
+# (config load, success notify, ETL-health) for a total of [1/9]..[9/9].
+STEP_COUNT = 6
 
 
 def run(config, secrets, ctx):
@@ -61,6 +66,13 @@ def run(config, secrets, ctx):
     uom_df = extract_uom_table(df)
     ctx.row_count = len(df)
     ctx.progress.step(f"File ingested & validated — {ctx.row_count} rows")
+
+    # ── 2b. Persist this file's suggested substitutes ──
+    sub_counts = sub_collection.persist_file_subs(df, save_path, config["persistence"])
+    ctx.progress.step(
+        f"Substitutes persisted — {sub_counts['inserted']} new, "
+        f"{sub_counts['updated']} updated, {sub_counts['unchanged']} unchanged"
+    )
 
     # ── 3. Fetch database tables ──
     database_cfg = config["database"]
