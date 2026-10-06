@@ -1,7 +1,7 @@
 """Medline PBO report pipeline — report-specific steps.
 
 Also persists the file's suggested substitutes to the MedlineSubCollection table
-(see sub_collection.py) right after ingestion, so a database problem fails the
+(see persistence.py) right after ingestion, so a database problem fails the
 run before the slower transform.
 
 Returns the saved output path. The shared runner (src/runner.py) wraps this with
@@ -12,7 +12,7 @@ from src.db import get_connection, fetch_tables
 from src.excel import reorder_columns, build_output_filename, apply_inventory_styling
 from src.msgraph import get_latest_excel_attachment
 
-from reports.medline_pbo import sub_collection
+from reports.medline_pbo import persistence
 from reports.medline_pbo.ingestion import (
     read_pbo_file,
     validate_columns,
@@ -68,7 +68,7 @@ def run(config, secrets, ctx):
     ctx.progress.step(f"File ingested & validated — {ctx.row_count} rows")
 
     # ── 2b. Persist this file's suggested substitutes ──
-    sub_counts = sub_collection.persist_file_subs(df, save_path, config["persistence"])
+    sub_counts = persistence.persist_file_subs(df, save_path, config["persistence"])
     ctx.progress.step(
         f"Substitutes persisted — {sub_counts['inserted']} new, "
         f"{sub_counts['updated']} updated, {sub_counts['unchanged']} unchanged"

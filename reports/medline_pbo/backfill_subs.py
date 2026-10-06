@@ -19,7 +19,7 @@ import re
 
 from src.config_loader import load_config
 
-from reports.medline_pbo import sub_collection
+from reports.medline_pbo import persistence
 from reports.medline_pbo.ingestion import read_pbo_file
 
 DEFAULT_CONFIG = os.path.join("reports", "medline_pbo", "config.yaml")
@@ -67,7 +67,7 @@ def main(argv=None):
     # Parse every file first so a bad one stops the backfill before any write.
     required = config["report"]["required_columns"]
     prepared = [
-        sub_collection.extract_sub_collection(read_pbo_file(path, required_columns=required), path)
+        persistence.extract_sub_collection(read_pbo_file(path, required_columns=required), path)
         for path in files
     ]
     print(f"Prepared {sum(len(s) for s in prepared)} rows from {len(files)} file(s).")
@@ -76,7 +76,7 @@ def main(argv=None):
         return
 
     for subs in prepared:
-        sub_collection.stage_and_upsert(subs, config["persistence"])
+        persistence.stage_and_upsert(subs, config["persistence"])
 
 
 if __name__ == "__main__":
