@@ -387,10 +387,10 @@ def send_success_notification(config, secrets, output_path):
 
 def _dioh_notes(report_cfg):
     desired_dioh_target_date = _format_notification_date(
-        report_cfg.get("desired_dioh_target_date", "2026-10-27")
+        report_cfg.get("desired_dioh_target_date", "2026-11-16")
     )
     overstock_check_date = _format_notification_date(
-        report_cfg.get("overstock_check_date", "2026-10-20")
+        report_cfg.get("overstock_check_date", "2026-11-09")
     )
     return (
         "Current-version calculation notes:\n"

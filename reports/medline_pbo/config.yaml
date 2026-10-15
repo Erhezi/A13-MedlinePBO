@@ -29,7 +29,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.9"
+  version: "1.10"
   # --------------------  new in v1.4 - 2026-03-18 --------------------
   # - Multi-location aggregation: IMDCSTRM + IPYCSTRM combined for inventory
   #   and usage so metrics reflect both sites.
@@ -83,6 +83,10 @@ report:
   #   reports/medline_pbo/persistence.py). History from 2026-08-13 on was
   #   loaded with reports/medline_pbo/backfill_subs.py.
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.10 - 2026-10-15 --------------------
+  # - Burndown project target postponed to 2026-11-16 (from 2026-10-27);
+  #   overstock check date moves to 2026-11-09 (from 2026-10-20)
+  # ---------------------------------------------------------------------
 
   review_threshold: -10 # in days
   # basically this means we need to have at least 10 days of coverage by the estimated available date. 
@@ -125,8 +129,9 @@ report:
   # v1.7 — "Desired DIOH" = days from the run date to desired_dioh_target_date;
   # "OverStocked" compares today + DIOH against overstock_check_date.
   # v1.8 — burndown project target dates updated to 2026-10-27 (postponed 1 week from 2026-10-20)
-  desired_dioh_target_date: "2026-10-27"
-  overstock_check_date: "2026-10-20"
+  # v1.10 — burndown project target postponed to 2026-11-16 (overstock check 2026-11-09)
+  desired_dioh_target_date: "2026-11-16"
+  overstock_check_date: "2026-11-09"
 
   required_columns: # for the input file
     - "Risk Level"
