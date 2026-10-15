@@ -476,8 +476,8 @@ def assemble_output(df_full, df_review_to_merge, timestamp_value, ipyc_items):
 
 def add_desired_dioh_columns(
     df_output,
-    target_date="2026-10-27",
-    overstock_date="2026-10-20",
+    target_date="2026-11-16",
+    overstock_date="2026-11-09",
     review_flag_value="Review",
 ):
     """Add the desired-DIOH order columns (populated for review rows only).
