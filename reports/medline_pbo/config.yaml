@@ -31,7 +31,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.10"
+  version: "1.11"
   # --------------------  new in v1.4 - 2026-03-18 --------------------
   # - Multi-location aggregation: IMDCSTRM + IPYCSTRM combined for inventory
   #   and usage so metrics reflect both sites.
@@ -89,6 +89,19 @@ report:
   # - Burndown project target postponed to 2026-11-16 (from 2026-10-27);
   #   overstock check date moves to 2026-11-09 (from 2026-10-20)
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.11 - 2026-10-28 --------------------
+  # - new "AutoSub" and "MIOH (AutoSub)" columns (autosub group, mid-blue
+  #   header) right before "Matched IMDC + IPYC", left-joined on Medline Item =
+  #   PRIMARY ML # (both from the Daily Autosub load, which runs from 7:50 AM):
+  #   "AutoSub" — the AutoSub Seq 1 pair in
+  #   SCSFileIngestor.MedlineAutoSub.MedlineAutosubRelation (if several, the
+  #   one on the latest daily report);
+  #   "MIOH (AutoSub)" — that pair's MIOH on today's report in
+  #   MedlineAutoSub.MedlineAutosub, blank if today's report does not list it
+  # - "In IPYCSTRM" (Yes/No) renamed "IPYCSTRM AvailableQty": the item's
+  #   AvailableQty at IPYCSTRM, -1 when the item is not stocked there
+  #   (thousands-separated)
+  # ---------------------------------------------------------------------
 
   review_threshold: -10 # in days
   # basically this means we need to have at least 10 days of coverage by the estimated available date. 
@@ -104,10 +117,11 @@ report:
   header_row_height: 85
   default_col_width: 8.43
   freeze_panes: [1, 2]   # freeze top row + columns A, B (== freeze pane at C2)
-  column_order: ["base_report", "item", "item_group", "rmd", "rmd_debug", "stamp"]
+  column_order: ["base_report", "autosub", "item", "item_group", "rmd", "rmd_debug", "stamp"]
   hide_groups: ["rmd_debug", "stamp"]
   header_colors:
     base_report: { bg: "#94c5e3" }
+    autosub: { bg: "#4a7ea6" }   # v1.11 — midway between base_report and item
     item: { bg: "#003769", font: "white" }
     item_group: { bg: "#112b47", font: "white" }
     rmd: { bg: "#ca006c", font: "white" }
@@ -184,9 +198,13 @@ report:
       - "Substitute Material Number"
       - "Dummy ID"
 
+    autosub:                            # NEW ON v1.11
+      - "AutoSub"
+      - "MIOH (AutoSub)"
+
     item:
       - "Matched IMDC + IPYC"
-      - "In IPYCSTRM"
+      - "IPYCSTRM AvailableQty"         # v1.11, was "In IPYCSTRM"
       - "No Issue Out (Last 365 Days)"
       - "report stamp"
       - "Item"
@@ -284,6 +302,7 @@ report:
     - "DIOH_ig"
     - "Get Well - DIOH"
     - "Get Well - DIOH_ig"
+    - "IPYCSTRM AvailableQty"  # NEW ON v1.11
 
   fill_cols:
     - "Material Description"

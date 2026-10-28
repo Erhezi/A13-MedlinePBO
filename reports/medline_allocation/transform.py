@@ -16,8 +16,9 @@ import pandas as pd
 def build_enrichment(df_inv, df_usage, df_long_desc):
     """Aggregate inventory + usage across locations and attach descriptions.
 
-    Returns ``(df_inv_agg, df_usage_agg, df_ehc)``; ``df_ehc`` carries the
-    ``In IPYCSTRM`` flag.
+    Returns ``(df_inv_agg, df_usage_agg, df_ehc)``; ``df_ehc`` carries
+    ``IPYCSTRM AvailableQty`` (v1.9, was the 'In IPYCSTRM' Yes/No flag): the
+    item's AvailableQty at IPYCSTRM, or -1 when the item is not stocked there.
     """
     df_inv_agg = (
         df_inv.groupby(["Item", "DefaultBuyUOM", "BuyUOMMultiplier", "StockUOM"])
@@ -32,9 +33,11 @@ def build_enrichment(df_inv, df_usage, df_long_desc):
         df_long_desc, on="Item", how="left"
     )
 
-    ipyc_set = set(df_inv[df_inv["Location"] == "IPYCSTRM"]["Item"])
-    df_ehc["In IPYCSTRM"] = df_ehc["Item"].apply(
-        lambda x: "Yes" if x in ipyc_set else "No"
+    # The inventory read keeps one row per Location + Item.
+    ipyc = df_inv[df_inv["Location"] == "IPYCSTRM"]
+    ipyc_qty = dict(zip(ipyc["Item"], ipyc["AvailableQty"]))
+    df_ehc["IPYCSTRM AvailableQty"] = df_ehc["Item"].apply(
+        lambda x: ipyc_qty.get(x, -1)
     )
     return df_inv_agg, df_usage_agg, df_ehc
 

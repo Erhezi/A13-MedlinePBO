@@ -13,6 +13,7 @@ from src.excel import reorder_columns, build_output_filename, apply_inventory_st
 from src.msgraph import get_latest_excel_attachment
 
 from reports.medline_pbo import persistence
+from reports.medline_pbo.queries import PBO_TEMPLATES
 from reports.medline_pbo.ingestion import (
     read_pbo_file,
     validate_columns,
@@ -32,6 +33,7 @@ from reports.medline_pbo.transform import (
     build_uom_conversions,
     apply_uom_alternatives,
     assemble_output,
+    merge_autosub,
     add_desired_dioh_columns,
 )
 
@@ -78,7 +80,7 @@ def run(config, secrets, ctx):
     database_cfg = config["database"]
     locations = database_cfg.get("locations") or [database_cfg["location"]]
     conn = get_connection(config)
-    tables = fetch_tables(conn, locations)
+    tables = fetch_tables(conn, locations, PBO_TEMPLATES)
     conn.close()
     ctx.progress.step("Database tables fetched")
 
@@ -119,7 +121,10 @@ def run(config, secrets, ctx):
         df_full,
         df_review_to_merge,
         timestamp_value,
-        prepared_tables["ipyc_items"],
+        prepared_tables["ipyc_qty"],
+    )
+    df_output = merge_autosub(
+        df_output, tables["autosub_relation"], tables["autosub_today"],
     )
     df_output = add_desired_dioh_columns(
         df_output,

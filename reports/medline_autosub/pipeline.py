@@ -2,7 +2,7 @@
 
 Medline mails the report around 7:20 AM and sometimes re-sends a fuller version
 later the same day (2026-10-27: a 1:50 PM resend with 61 rows vs 35). The task
-runs every 2 hours on weekdays and each run:
+runs every 4 hours on weekdays (7:50 AM, 11:50 AM, 3:50 PM) and each run:
 
   1. looks up today's last SUCCESS for this process in ETL health;
   2. downloads the newest export received since that load started — or since

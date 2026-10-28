@@ -1,7 +1,8 @@
 # ──────────────────────────────────────────────
 # Medline Daily Autosub Management Pipeline — Configuration
-#   Mailed daily (~7:20 AM, occasionally re-sent later); scheduled every 2 hours
-#   on weekdays 7:50 AM-3:50 PM, loads each new export once: today's export
+#   Mailed daily (~7:20 AM, occasionally re-sent later); scheduled every 4 hours
+#   on weekdays 7:50 AM-5 PM (runs 7:50, 11:50, 3:50), loads each new export
+#   once: today's export
 #   -> [MedlineAutoSub].[medlineautosub_stg] -> upsert into
 #   [MedlineAutoSub].[MedlineAutosub] on (PRIMARY ML #, AutoSub, Report Date),
 #   and its pairs into [MedlineAutoSub].[MedlineAutosubRelation] on

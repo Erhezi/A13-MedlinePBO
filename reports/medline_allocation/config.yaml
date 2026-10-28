@@ -48,7 +48,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.8"
+  version: "1.9"
   # --------------------  new in v1.4 - 2026-07-15 --------------------
   # - add a desired-DIOH order block (yellow header, report.yellow_header_cols),
   #   populated for every row with an Item number resolved and matched to
@@ -96,6 +96,11 @@ report:
   # --------------------  new in v1.8 - 2026-10-15 --------------------
   # - Burndown project target postponed to 2026-11-16 (from 2026-10-27);
   #   overstock check date moves to 2026-11-09 (from 2026-10-20)
+  # ---------------------------------------------------------------------
+  # --------------------  new in v1.9 - 2026-10-28 --------------------
+  # - "In IPYCSTRM" (Yes/No) renamed "IPYCSTRM AvailableQty": the item's
+  #   AvailableQty at IPYCSTRM, -1 when the item is not stocked there
+  #   (thousands-separated; same change as PBO v1.11)
   # ---------------------------------------------------------------------
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation'
   file_name_split_token: "Report"
@@ -171,7 +176,7 @@ report:
 
     item:
       - "Matched IMDC + IPYC"
-      - "In IPYCSTRM"
+      - "IPYCSTRM AvailableQty"  # v1.9, was "In IPYCSTRM"
       - "No Issue Out (Last 365 Days)"
       - "DIOH_final"
       - "Item"
@@ -266,6 +271,7 @@ report:
     - "Qty available to order (EA, by MPN)"
     - "Risk of Loss Qty (EA, by MPN)"
     - "Risk of Loss Qty (in SalesUOM, by MPN)"
+    - "IPYCSTRM AvailableQty"  # NEW ON v1.9
 
   fill_cols:
     - "Material Text"

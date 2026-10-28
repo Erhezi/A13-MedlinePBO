@@ -29,7 +29,10 @@ INVENTORY_CONSISTENCY_COLUMNS = [
 
 def prepare_location_inventory_tables(df_inv, df_usage, df_plmusage):
     """Validate multi-location UOM consistency and build aggregated tables."""
-    ipyc_items = set(df_inv.loc[df_inv["Location"] == "IPYCSTRM", "Item"].dropna())
+    # Item -> AvailableQty at IPYCSTRM alone (the inventory read keeps one row per
+    # Location + Item). Taken before the UOM filter, so inconsistent items still show.
+    ipyc = df_inv.loc[df_inv["Location"] == "IPYCSTRM"].dropna(subset=["Item"])
+    ipyc_qty = dict(zip(ipyc["Item"], ipyc["AvailableQty"]))
 
     inconsistent_keys = _find_inventory_uom_inconsistencies(df_inv)
     inconsistent_items = {item for _, item in inconsistent_keys}
@@ -57,7 +60,7 @@ def prepare_location_inventory_tables(df_inv, df_usage, df_plmusage):
         "usage": aggregated_usage,
         "plmusage": aggregated_plmusage,
         "uom_inconsistency": df_uom_inconsistency,
-        "ipyc_items": ipyc_items,
+        "ipyc_qty": ipyc_qty,
     }
 
 
@@ -464,14 +467,43 @@ def apply_uom_alternatives(df_review, medline_cf_df):
 
 # ── Step 8: final assembly ───────────────────────────────────────────
 
-def assemble_output(df_full, df_review_to_merge, timestamp_value, ipyc_items):
-    """Join review recommendations back and attach the inventory timestamp."""
+def assemble_output(df_full, df_review_to_merge, timestamp_value, ipyc_qty):
+    """Join review recommendations back and attach the inventory timestamp.
+
+    ``IPYCSTRM AvailableQty`` (v1.11, was the 'In IPYCSTRM' Yes/No flag) holds
+    the item's AvailableQty at IPYCSTRM, or -1 when the item is not stocked there.
+    """
     df_output = df_full.merge(df_review_to_merge, on="Medline Item", how="left")
     df_output["Inventory Data As Of"] = str(timestamp_value)[:19]
-    df_output["In IPYCSTRM"] = df_output["Item"].apply(
-        lambda item: "Yes" if item in ipyc_items else "No"
+    df_output["IPYCSTRM AvailableQty"] = df_output["Item"].apply(
+        lambda item: ipyc_qty.get(item, -1)
     )
     return df_output
+
+
+def merge_autosub(df_output, df_relation, df_autosub_today):
+    """Left-join each Medline Item's first-choice AutoSub and today's MIOH for it.
+
+    ``AutoSub`` comes from *df_relation* (the ``autosub_relation`` read: one
+    ``AutoSub Seq`` = 1 pair per primary, so the item keeps its sub on days
+    Medline's report leaves it out). ``MIOH (AutoSub)`` is that pair's MIOH on
+    today's report (*df_autosub_today*), blank when today's report does not
+    list the pair.
+    """
+    if df_autosub_today.empty:
+        print("WARNING: no AutoSub rows for today — MIOH (AutoSub) left blank.")
+
+    subs = df_relation.merge(
+        df_autosub_today.rename(columns={"MIOH": "MIOH (AutoSub)"}),
+        on=["PRIMARY ML #", "AutoSub"], how="left", validate="one_to_one",
+    )
+
+    df = df_output.merge(
+        subs,
+        left_on="Medline Item", right_on="PRIMARY ML #",
+        how="left", validate="many_to_one",
+    )
+    return df.drop(columns=["PRIMARY ML #"])
 
 
 def add_desired_dioh_columns(
