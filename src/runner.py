@@ -44,12 +44,19 @@ class Progress:
 
 
 class RunContext:
-    """Mutable per-run state the pipeline updates for ETL-health logging."""
+    """Mutable per-run state the pipeline updates for ETL-health logging.
+
+    A pipeline that finds nothing to do (e.g. a daily feed scheduled several
+    times a day with nothing new since its load) sets ``skip_reason`` and
+    returns; the runner then sends no success email and writes no ETL-health
+    row.
+    """
 
     def __init__(self, progress=None):
         self.source_file_path = ""
         self.row_count = 0
         self.progress = progress
+        self.skip_reason = None
 
 
 def _apply_notification_mode(config, mode):
@@ -153,6 +160,9 @@ def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps,
         progress.step("Config & secrets loaded")
 
         output_path = pipeline_fn(config, secrets, ctx)
+        if ctx.skip_reason:
+            print(f"Run skipped — {ctx.skip_reason}")
+            return
 
         send_success_notification(config, secrets, output_path)
         progress.step("Success notification sent")

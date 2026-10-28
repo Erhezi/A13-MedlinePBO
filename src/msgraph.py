@@ -83,6 +83,11 @@ def _format_graph_datetime(dt):
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _from_address(message):
+    """Return the message's From address, or "" when Graph omits it (drafts)."""
+    return ((message.get("from") or {}).get("emailAddress") or {}).get("address", "")
+
+
 def _list_messages(
     graph,
     user,
@@ -91,17 +96,26 @@ def _list_messages(
     max_messages,
     subject_keyword=None,
     received_since=None,
+    sender=None,
 ):
     endpoint = f"{graph}/v1.0/users/{user}/mailFolders/{folder_id}/messages"
     params = {
         "$orderby": "receivedDateTime desc",
-        "$select": "id,subject,receivedDateTime",
+        "$select": "id,subject,receivedDateTime,from",
         "$top": max_messages,
     }
 
     resp = requests.get(endpoint, headers=headers, params=params, timeout=30)
     _raise_for_status_with_details(resp, f"Failed to list messages in folder '{folder_id}'")
     messages = resp.json().get("value", [])
+
+    if sender:
+        sender_lower = sender.lower()
+        messages = [
+            message
+            for message in messages
+            if _from_address(message).lower() == sender_lower
+        ]
 
     if subject_keyword:
         subject_keyword_lower = subject_keyword.lower()
@@ -205,13 +219,19 @@ def get_latest_excel_attachment(
     attachment_prefix=None,
     attachment_contains=None,
     attachment_exclude=None,
+    received_since=None,
 ):
     """Download the newest matching Excel attachment from Graph mail.
 
     Matching is config-driven (``config['email']``): ``attachment_prefix``,
     ``attachment_contains``, ``attachment_exclude`` and ``attachment_extensions``
     constrain the file name; ``inbox_lookback_days`` (or null for no limit)
-    constrains how far back to search.
+    constrains how far back to search; ``expected_sender`` (optional) keeps only
+    messages whose From address matches it, case-insensitively.
+
+    *received_since* (a timezone-aware datetime) replaces the lookback window
+    with a fixed cutoff — the daily Autosub feed passes local midnight so only
+    today's mail counts.
 
     The three name filters can be overridden per call so one mailbox can serve
     more than one export — the Allocation report pulls its current-month file
@@ -245,13 +265,21 @@ def get_latest_excel_attachment(
         "attachment_extensions", list(DEFAULT_ATTACHMENT_EXTENSIONS)
     )
     lookback_days = email_cfg.get("inbox_lookback_days", DEFAULT_INBOX_LOOKBACK_DAYS)
+    expected_sender = email_cfg.get("expected_sender")
 
     inbox_cutoff = None
     lookback_note = "all messages"
-    if lookback_days is not None:
+    if received_since is not None:
+        inbox_cutoff = received_since
+        lookback_note = f"the time since {received_since:%Y-%m-%d %H:%M}"
+    elif lookback_days is not None:
         inbox_cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
         lookback_note = f"the last {lookback_days} days"
-    print(f"Searching Inbox for subject containing '{keyword}' from {lookback_note}.")
+    sender_note = f" sent by '{expected_sender}'" if expected_sender else ""
+    print(
+        f"Searching Inbox for subject containing '{keyword}'{sender_note} "
+        f"from {lookback_note}."
+    )
     inbox_messages = _list_messages(
         graph,
         user,
@@ -260,6 +288,7 @@ def get_latest_excel_attachment(
         max_messages=max_messages,
         subject_keyword=keyword,
         received_since=inbox_cutoff,
+        sender=expected_sender,
     )
     save_path, file_name = _find_matching_attachment(
         graph,
@@ -284,8 +313,8 @@ def get_latest_excel_attachment(
         name_rules += f", containing none of {list(attachment_exclude)}"
     error_message = (
         "Unable to find a matching attachment. "
-        f"Inbox search required subject containing '{keyword}' within {lookback_note} "
-        f"and attachment name {name_rules}."
+        f"Inbox search required subject containing '{keyword}'{sender_note} "
+        f"within {lookback_note} and attachment name {name_rules}."
     )
     print(f"ERROR: {error_message}")
     raise FileNotFoundError(error_message)
@@ -369,31 +398,39 @@ def send_success_notification(config, secrets, output_path):
     report_name = notification.get("report_name", "Report")
     cc_recipients = notification.get("success_cc_recipients", [])
     report_cfg = config.get("report", {})
+    body_text = f"The {report_name} report has been generated successfully and is attached."
+    # The DIOH notes only apply to reports that compute Desired DIOH (PBO and
+    # Allocation); a pure data-load report such as Fill-Kill omits the key.
+    if "desired_dioh_target_date" in report_cfg:
+        body_text += "\n\n" + _dioh_notes(report_cfg)
+    send_email_with_attachment(
+        config,
+        secrets,
+        recipients,
+        subject=f"{report_name} Report — Success",
+        body_text=body_text,
+        attachment_path=output_path,
+        cc_recipients=cc_recipients,
+    )
+
+
+def _dioh_notes(report_cfg):
     desired_dioh_target_date = _format_notification_date(
         report_cfg.get("desired_dioh_target_date", "2026-11-16")
     )
     overstock_check_date = _format_notification_date(
         report_cfg.get("overstock_check_date", "2026-11-09")
     )
-    send_email_with_attachment(
-        config,
-        secrets,
-        recipients,
-        subject=f"{report_name} Report — Success",
-        body_text=(
-            f"The {report_name} report has been generated successfully and is attached.\n\n"
-            "Current-version calculation notes:\n"
-            f"- Desired DIOH is calculated as the number of days between the report "
-            f"generation date and {desired_dioh_target_date}.\n"
-            f"- ‘Overstocked’ and ‘Not overstocked’ are based on the current burn-rate "
-            f"projection against {overstock_check_date}:\n"
-            f"  - ‘Not overstocked’ means projected stock is exhausted on or before "
-            f"{overstock_check_date}.\n"
-            f"  - ‘Overstocked’ means projected stock is expected to last beyond "
-            f"{overstock_check_date}."
-        ),
-        attachment_path=output_path,
-        cc_recipients=cc_recipients,
+    return (
+        "Current-version calculation notes:\n"
+        f"- Desired DIOH is calculated as the number of days between the report "
+        f"generation date and {desired_dioh_target_date}.\n"
+        f"- ‘Overstocked’ and ‘Not overstocked’ are based on the current burn-rate "
+        f"projection against {overstock_check_date}:\n"
+        f"  - ‘Not overstocked’ means projected stock is exhausted on or before "
+        f"{overstock_check_date}.\n"
+        f"  - ‘Overstocked’ means projected stock is expected to last beyond "
+        f"{overstock_check_date}."
     )
 
 

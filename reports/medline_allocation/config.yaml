@@ -7,6 +7,9 @@ email:
   graph_endpoint: "https://graph.microsoft.com"
   from_email: "procurementdatateam@montefiore.org"
   keyword: "Product Allocation Report"
+  # Only mail whose From address is this account is considered (case-insensitive).
+  # Also applies to the previous_month search below.
+  expected_sender: "insight@medline.com"
   destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation\Raw'
   max_messages: 100
   # Attachment matching (consumed by src/msgraph.py).

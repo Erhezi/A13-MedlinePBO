@@ -8,6 +8,8 @@ email:
   from_email: "procurementdatateam@montefiore.org"
   folder_name: "Monte PBO"
   keyword: "Proactive BackOrder Report"
+  # Only mail whose From address is this account is considered (case-insensitive).
+  expected_sender: "insight@medline.com"
   destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO\Raw'
   max_messages: 100
   # Attachment matching (consumed by src/msgraph.py)
