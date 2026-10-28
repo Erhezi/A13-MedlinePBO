@@ -83,6 +83,11 @@ def _format_graph_datetime(dt):
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _from_address(message):
+    """Return the message's From address, or "" when Graph omits it (drafts)."""
+    return ((message.get("from") or {}).get("emailAddress") or {}).get("address", "")
+
+
 def _list_messages(
     graph,
     user,
@@ -91,17 +96,26 @@ def _list_messages(
     max_messages,
     subject_keyword=None,
     received_since=None,
+    sender=None,
 ):
     endpoint = f"{graph}/v1.0/users/{user}/mailFolders/{folder_id}/messages"
     params = {
         "$orderby": "receivedDateTime desc",
-        "$select": "id,subject,receivedDateTime",
+        "$select": "id,subject,receivedDateTime,from",
         "$top": max_messages,
     }
 
     resp = requests.get(endpoint, headers=headers, params=params, timeout=30)
     _raise_for_status_with_details(resp, f"Failed to list messages in folder '{folder_id}'")
     messages = resp.json().get("value", [])
+
+    if sender:
+        sender_lower = sender.lower()
+        messages = [
+            message
+            for message in messages
+            if _from_address(message).lower() == sender_lower
+        ]
 
     if subject_keyword:
         subject_keyword_lower = subject_keyword.lower()
@@ -211,7 +225,8 @@ def get_latest_excel_attachment(
     Matching is config-driven (``config['email']``): ``attachment_prefix``,
     ``attachment_contains``, ``attachment_exclude`` and ``attachment_extensions``
     constrain the file name; ``inbox_lookback_days`` (or null for no limit)
-    constrains how far back to search.
+    constrains how far back to search; ``expected_sender`` (optional) keeps only
+    messages whose From address matches it, case-insensitively.
 
     The three name filters can be overridden per call so one mailbox can serve
     more than one export — the Allocation report pulls its current-month file
@@ -245,13 +260,18 @@ def get_latest_excel_attachment(
         "attachment_extensions", list(DEFAULT_ATTACHMENT_EXTENSIONS)
     )
     lookback_days = email_cfg.get("inbox_lookback_days", DEFAULT_INBOX_LOOKBACK_DAYS)
+    expected_sender = email_cfg.get("expected_sender")
 
     inbox_cutoff = None
     lookback_note = "all messages"
     if lookback_days is not None:
         inbox_cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
         lookback_note = f"the last {lookback_days} days"
-    print(f"Searching Inbox for subject containing '{keyword}' from {lookback_note}.")
+    sender_note = f" sent by '{expected_sender}'" if expected_sender else ""
+    print(
+        f"Searching Inbox for subject containing '{keyword}'{sender_note} "
+        f"from {lookback_note}."
+    )
     inbox_messages = _list_messages(
         graph,
         user,
@@ -260,6 +280,7 @@ def get_latest_excel_attachment(
         max_messages=max_messages,
         subject_keyword=keyword,
         received_since=inbox_cutoff,
+        sender=expected_sender,
     )
     save_path, file_name = _find_matching_attachment(
         graph,
@@ -284,8 +305,8 @@ def get_latest_excel_attachment(
         name_rules += f", containing none of {list(attachment_exclude)}"
     error_message = (
         "Unable to find a matching attachment. "
-        f"Inbox search required subject containing '{keyword}' within {lookback_note} "
-        f"and attachment name {name_rules}."
+        f"Inbox search required subject containing '{keyword}'{sender_note} "
+        f"within {lookback_note} and attachment name {name_rules}."
     )
     print(f"ERROR: {error_message}")
     raise FileNotFoundError(error_message)

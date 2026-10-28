@@ -14,6 +14,8 @@ email:
   # case-insensitively against the subject; the prefix against the file name
   # ("WPH - FILL KILL REPORT-2026-09-20-01-02-06.xlsx").
   keyword: "FILL KILL"
+  # Only mail whose From address is this account is considered (case-insensitive).
+  expected_sender: "insight@medline.com"
   destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Raw'
   max_messages: 100
   attachment_prefix: "WPH - FILL KILL REPORT"
