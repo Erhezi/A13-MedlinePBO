@@ -15,7 +15,10 @@ PBO substitute collection). Each call:
 The staging table therefore always holds exactly the last batch loaded.
 
 A table is described by ``column_types`` (an ordered {column: SQL type} dict
-whose order is the load order) and ``key_columns``. Columns listed in
+whose order is the load order) and ``key_columns``. With ``surrogate_key`` the
+target instead gets an INT IDENTITY column of that name as its primary key and
+``key_columns`` become a UNIQUE constraint (still what the MERGE matches on);
+the staging table keeps ``key_columns`` as its primary key. Columns listed in
 ``ignore_on_compare`` (provenance such as ``source file``) are still written,
 but a change in them alone does not count as a change. Schema / table names
 come from trusted config and are bracket-quoted as identifiers.
@@ -48,7 +51,15 @@ def _pk(table, key_columns):
     )
 
 
-def _ddl(schema, staging_table, target_table, column_types, key_columns):
+def _unique(table, key_columns):
+    return (
+        f"        CONSTRAINT [UQ_{table}] UNIQUE "
+        f"({', '.join(_q(c) for c in key_columns)})"
+    )
+
+
+def _ddl(schema, staging_table, target_table, column_types, key_columns,
+         surrogate_key=None):
     columns = _column_defs(column_types, key_columns)
     staging_cols = ",\n".join(
         columns
@@ -57,13 +68,23 @@ def _ddl(schema, staging_table, target_table, column_types, key_columns):
             _pk(staging_table, key_columns),
         ]
     )
+    if surrogate_key:
+        target_head = [f"        {_q(surrogate_key)} INT IDENTITY(1,1) NOT NULL"]
+        target_keys = [
+            _pk(target_table, [surrogate_key]),
+            _unique(target_table, key_columns),
+        ]
+    else:
+        target_head = []
+        target_keys = [_pk(target_table, key_columns)]
     target_cols = ",\n".join(
-        columns
+        target_head
+        + columns
         + [
             "        [create stamp] DATETIME NOT NULL DEFAULT GETDATE()",
             "        [update stamp] DATETIME NOT NULL DEFAULT GETDATE()",
-            _pk(target_table, key_columns),
         ]
+        + target_keys
     )
     return [
         f"IF SCHEMA_ID(N'{schema}') IS NULL EXEC(N'CREATE SCHEMA [{schema}]');",
@@ -78,10 +99,12 @@ def _ddl(schema, staging_table, target_table, column_types, key_columns):
     ]
 
 
-def ensure_tables(conn, schema, staging_table, target_table, column_types, key_columns):
+def ensure_tables(conn, schema, staging_table, target_table, column_types, key_columns,
+                  surrogate_key=None):
     """Create the schema and both tables if they do not exist yet (idempotent)."""
     cursor = conn.cursor()
-    for statement in _ddl(schema, staging_table, target_table, column_types, key_columns):
+    for statement in _ddl(schema, staging_table, target_table, column_types, key_columns,
+                          surrogate_key):
         cursor.execute(statement)
     conn.commit()
 
@@ -139,7 +162,8 @@ def _to_records(df, load_columns):
 
 def stage_and_upsert(df, conn_cfg, schema, staging_table, target_table,
                      column_types, key_columns,
-                     ignore_on_compare=DEFAULT_IGNORE_ON_COMPARE):
+                     ignore_on_compare=DEFAULT_IGNORE_ON_COMPARE,
+                     surrogate_key=None):
     """Load *df* into staging and MERGE it into the target in one transaction.
 
     *conn_cfg* holds driver/server/database/trusted_connection. Returns a dict
@@ -152,7 +176,8 @@ def stage_and_upsert(df, conn_cfg, schema, staging_table, target_table,
 
     conn = get_pyodbc_connection(conn_cfg)
     try:
-        ensure_tables(conn, schema, staging_table, target_table, column_types, key_columns)
+        ensure_tables(conn, schema, staging_table, target_table, column_types, key_columns,
+                      surrogate_key)
 
         cursor = conn.cursor()
         cursor.fast_executemany = True

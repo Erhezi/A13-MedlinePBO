@@ -219,6 +219,7 @@ def get_latest_excel_attachment(
     attachment_prefix=None,
     attachment_contains=None,
     attachment_exclude=None,
+    received_since=None,
 ):
     """Download the newest matching Excel attachment from Graph mail.
 
@@ -227,6 +228,10 @@ def get_latest_excel_attachment(
     constrain the file name; ``inbox_lookback_days`` (or null for no limit)
     constrains how far back to search; ``expected_sender`` (optional) keeps only
     messages whose From address matches it, case-insensitively.
+
+    *received_since* (a timezone-aware datetime) replaces the lookback window
+    with a fixed cutoff — the daily Autosub feed passes local midnight so only
+    today's mail counts.
 
     The three name filters can be overridden per call so one mailbox can serve
     more than one export — the Allocation report pulls its current-month file
@@ -264,7 +269,10 @@ def get_latest_excel_attachment(
 
     inbox_cutoff = None
     lookback_note = "all messages"
-    if lookback_days is not None:
+    if received_since is not None:
+        inbox_cutoff = received_since
+        lookback_note = f"the time since {received_since:%Y-%m-%d %H:%M}"
+    elif lookback_days is not None:
         inbox_cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
         lookback_note = f"the last {lookback_days} days"
     sender_note = f" sent by '{expected_sender}'" if expected_sender else ""

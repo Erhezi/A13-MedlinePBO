@@ -1,0 +1,106 @@
+# ──────────────────────────────────────────────
+# Medline Daily Autosub Management Pipeline — Configuration
+#   Mailed daily (~7:20 AM, occasionally re-sent later); scheduled every 2 hours
+#   on weekdays 7:50 AM-3:50 PM, loads each new export once: today's export
+#   -> [MedlineAutoSub].[medlineautosub_stg] -> upsert into
+#   [MedlineAutoSub].[MedlineAutosub] on (PRIMARY ML #, AutoSub, Report Date),
+#   and its pairs into [MedlineAutoSub].[MedlineAutosubRelation] on
+#   (PRIMARY ML #, AutoSub).
+# ──────────────────────────────────────────────
+
+email:
+  aad_endpoint: "https://login.microsoftonline.com"
+  graph_endpoint: "https://graph.microsoft.com"
+  from_email: "procurementdatateam@montefiore.org"
+  # Subject: "Insight Report : Daily Autosub Management Report"; matched
+  # case-insensitively. The prefix is matched against the file name
+  # ("Daily Autosub Management Report-2026-10-27-06-19-58.xls").
+  keyword: "Daily Autosub Management"
+  # Only mail whose From address is this account is considered (case-insensitive).
+  # Keeps out internal "RE:" replies that carry the same attachment.
+  expected_sender: "insight@medline.com"
+  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Autosub\Raw'
+  max_messages: 100
+  attachment_prefix: "Daily Autosub Management Report"
+  attachment_extensions: [".xls"]
+  # Only mail received since local midnight is searched (no inbox_lookback_days).
+  # A run before this local time that finds no mail yet skips quietly; a run at
+  # or after it fails and emails. Keep it quoted — YAML reads a bare 09:00 as
+  # a number.
+  expected_by: "09:00"
+
+report:
+  version: "1.1"
+  # --------------------  v1.0 - 2026-10-27 --------------------
+  # - AS1..AS4 unpivoted to one row per (PRIMARY ML #, AutoSub) with AutoSub
+  #   Seq 1-4; empty slots (blank or "0") dropped
+  # - Report Date taken from the footer's "Report Created: mm/dd/yyyy"
+  # - daily table: identity ID surrogate key, unique (PRIMARY ML #, AutoSub,
+  #   Report Date); relation table: PK (PRIMARY ML #, AutoSub)
+  # ---------------------------------------------------------------------
+  # --------------------  new in v1.1 - 2026-10-28 --------------------
+  # - a repeated (PRIMARY ML #, AutoSub, Report Date) no longer fails the run:
+  #   the first row in file order is kept, the rest dropped with a NOTE in the
+  #   log (2026-10-28 listed NON256025 twice, DED QTY 14 then 7)
+  # ---------------------------------------------------------------------
+  # No Excel output. output_dir is used only by the monthly maintenance step,
+  # to archive downloaded raw files older than this month.
+  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Autosub\Raw'
+
+# ──────────────────────────────────────────────
+# Notification — success_recipients is empty on purpose, as for Fill-Kill.
+# Failures always email. Skipped runs (nothing newer since today's load, or
+# before expected_by with no mail yet) send nothing. Test mode (--test) redirects both
+# to test_recipients.
+# ──────────────────────────────────────────────
+notification:
+  report_name: "Medline Daily Autosub"
+  success_recipients: []
+  success_cc_recipients: []
+  failure_recipients:
+    - "dli2@montefiore.org"
+  test_recipients:
+    - "dli2@montefiore.org"
+
+# ──────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────
+logging:
+  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Autosub\Log'
+
+# ──────────────────────────────────────────────
+# Maintenance — monthly cleanup & archiving
+# ──────────────────────────────────────────────
+maintenance:
+  cleanup_day_range: [3, 10]
+  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Autosub\Archived'
+  output_glob: "Daily Autosub Management Report*.xls"
+
+# ──────────────────────────────────────────────
+# ETL Health — process status tracking. After a SUCCESS row for process_id
+# today, later runs only load mail received after that run started (a resend).
+# ──────────────────────────────────────────────
+etl_health:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineReport"
+  table: "ETLHealth"
+  process_name: "Medline Daily Autosub"
+  process_id: "MEDAUTOSUB_D_DL"
+  process_frequency: "Daily"
+
+# ──────────────────────────────────────────────
+# Persistence — staging + target tables (created on first run if missing)
+# ──────────────────────────────────────────────
+persistence:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineAutoSub"
+  staging_table: "medlineautosub_stg"                  # truncated + reloaded every run
+  target_table: "MedlineAutosub"                       # ID identity PK; unique (PRIMARY ML #, AutoSub, Report Date)
+  relation_staging_table: "medlineautosubrelation_stg" # truncated + reloaded every run
+  relation_table: "MedlineAutosubRelation"             # PK (PRIMARY ML #, AutoSub)

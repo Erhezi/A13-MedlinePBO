@@ -121,3 +121,22 @@ def insert_etl_health(
         print(f"ETL Health logged — {task_status}")
     finally:
         conn.close()
+
+
+def last_etl_success_since(config, since):
+    """Return the latest SUCCESS ``LastRunTime`` of this process at/after *since*.
+
+    Returns None when there is none. *since* is a naive local datetime, matching
+    how ``insert_etl_health`` writes ``LastRunTime``. Lets a once-a-day feed that
+    is scheduled more often skip the rest of the day once it has loaded.
+    """
+    etl = config["etl_health"]
+    conn = get_pyodbc_connection(etl)
+    sql = (
+        f"SELECT MAX([LastRunTime]) FROM [{etl['schema']}].[{etl['table']}] "
+        "WHERE [ProcessID] = ? AND [TaskStatus] = 'SUCCESS' AND [LastRunTime] >= ?"
+    )
+    try:
+        return conn.cursor().execute(sql, etl["process_id"], since).fetchone()[0]
+    finally:
+        conn.close()

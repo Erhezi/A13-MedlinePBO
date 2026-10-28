@@ -10,13 +10,14 @@ The root folder in the examples below is:
 your_path_to_this_folder\A13-MedlinePBO
 ```
 
-## Project Layout — Three Pipelines
+## Project Layout — Four Pipelines
 
-This repo runs **three** pipelines that share common infrastructure:
+This repo runs **four** pipelines that share common infrastructure:
 
 - **Medline PBO** — run `python main.py --report medline_pbo`, config `reports/medline_pbo/config.yaml`, launcher `run_medline_pbo.bat` (scheduled Tue/Thu).
 - **Medline Allocation** — run `python main.py --report medline_allocation`, config `reports/medline_allocation/config.yaml`, launcher `run_medline_allocation.bat` (scheduled Mon–Fri).
 - **Medline Fill-Kill** — run `python main.py --report medline_fillkill`, config `reports/medline_fillkill/config.yaml`, launcher `run_medline_fillkill.bat` (scheduled hourly, 7 AM–11 PM). A data load only, with no Excel output; see below.
+- **Medline Daily Autosub** — run `python main.py --report medline_autosub`, config `reports/medline_autosub/config.yaml`, launcher `run_medline_autosub.bat` (scheduled every 2 hours on weekdays, 7:50 AM–3:50 PM; loads each new export once). A data load only, with no Excel output; see below.
 
 All of them run through the single entry point `main.py`, selected with `--report`. Add `--config <path>` only to override a report's default config.
 
@@ -27,6 +28,15 @@ python -m reports.medline_fillkill.backfill "I:\Procurement PMO\dli2\Medline Fil
 ```
 
 Both tables are created automatically on first run if missing. Success emails are off in `prd` (`notification.success_recipients: []`); failures still email.
+
+One operational note for **Medline Daily Autosub**: Medline mails `Daily Autosub Management Report-<stamp>.xls` around 7:20 AM and sometimes re-sends a fuller version later the same day. The task runs every 2 hours and loads each new export once:
+
+- Before the day's first load, only mail received since midnight counts. If none has arrived yet, a run before `email.expected_by` (09:00) skips; a later run fails and emails.
+- After a `SUCCESS` for process `MEDAUTOSUB_D_DL` in `MedlineReport.ETLHealth` today, a run only loads mail received after that load started (a resend). If there is none, it skips with no email and no ETL-health row.
+- The four side-by-side sub slots (AS1–AS4) are unpivoted into one row per (`PRIMARY ML #`, `AutoSub`) with `AutoSub Seq` 1–4. Empty slots (blank or `0`) are dropped, and `Report Date` comes from the footer's "Report Created" line. If a key repeats (Medline sometimes lists a primary twice), the first row in file order is kept and the rest are dropped with a NOTE in the log.
+- Rows go to `SCSFileIngestor.MedlineAutoSub.MedlineAutosub` (identity `ID` primary key, unique on `PRIMARY ML #`, `AutoSub`, `Report Date`). The pairs go to `MedlineAutoSub.MedlineAutosubRelation` (primary key `PRIMARY ML #`, `AutoSub`), where `create stamp` is when a pair was first seen and `update stamp` is when its `PRIMARY PARENT` or `AutoSub Seq` last changed.
+
+To load files already on disk, run `python -m reports.medline_autosub.backfill <folder>` (add `--dry-run` to parse only). A backfill writes no ETL-health row, so the day's scheduled run still loads the newest file.
 
 One operational note for **Medline PBO**: since v1.9 each run also persists Medline's suggested substitutes. The file's distinct (`Medline Item`, `Customer Prefered Sub`, `Substitute Material Number`) rows, for lines where at least one sub column is filled, are staged into `SCSFileIngestor.MedlinePBO.medlinesubcollection_stg` and upserted into `MedlinePBO.MedlineSubCollection` on that key (an empty sub column is stored as `''`). A database error here fails the run before the report is built. To reload past files, run `python -m reports.medline_pbo.backfill_subs` (defaults to the Raw folder, files dated 2026-08-13 on; `--since` and `--dry-run` are available).
 
