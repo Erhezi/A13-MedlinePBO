@@ -385,9 +385,10 @@ def send_email_with_attachment(
     print(f"Email sent to {recipients} — {subject}")
 
 
-def send_success_notification(config, secrets, output_path):
+def send_success_notification(config, secrets, output_path, extra_lines=()):
     """Notify success recipients with the output Excel attached.
 
+    *extra_lines* (e.g. PBO's "3PL file used: ...") follow the opening line.
     Skips silently when no success recipients are configured.
     """
     notification = config["notification"]
@@ -399,6 +400,8 @@ def send_success_notification(config, secrets, output_path):
     cc_recipients = notification.get("success_cc_recipients", [])
     report_cfg = config.get("report", {})
     body_text = f"The {report_name} report has been generated successfully and is attached."
+    if extra_lines:
+        body_text += "\n\n" + "\n".join(extra_lines)
     # The DIOH notes only apply to reports that compute Desired DIOH (PBO and
     # Allocation); a pure data-load report such as Fill-Kill omits the key.
     if "desired_dioh_target_date" in report_cfg:

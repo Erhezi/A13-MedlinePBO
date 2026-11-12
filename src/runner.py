@@ -50,6 +50,10 @@ class RunContext:
     times a day with nothing new since its load) sets ``skip_reason`` and
     returns; the runner then sends no success email and writes no ETL-health
     row.
+
+    ``warnings`` are non-fatal problems ("Warning: ..." strings); on success
+    the runner writes them, joined with "; ", to the ETL-health Error column.
+    ``email_notes`` are extra lines for the success email body.
     """
 
     def __init__(self, progress=None):
@@ -57,6 +61,8 @@ class RunContext:
         self.row_count = 0
         self.progress = progress
         self.skip_reason = None
+        self.warnings = []
+        self.email_notes = []
 
 
 def _apply_notification_mode(config, mode):
@@ -164,7 +170,9 @@ def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps,
             print(f"Run skipped — {ctx.skip_reason}")
             return
 
-        send_success_notification(config, secrets, output_path)
+        send_success_notification(
+            config, secrets, output_path, extra_lines=ctx.email_notes,
+        )
         progress.step("Success notification sent")
 
         insert_etl_health(
@@ -176,7 +184,7 @@ def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps,
             duration=_elapsed_seconds(start_time),
             package_path=package_path,
             log_file_path=logger.log_path,
-            error_message="",
+            error_message="; ".join(ctx.warnings),
         )
         progress.step("ETL health logged")
 

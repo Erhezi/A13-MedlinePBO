@@ -99,8 +99,9 @@ report:
   # ---------------------------------------------------------------------
   # --------------------  new in v1.9 - 2026-10-28 --------------------
   # - "In IPYCSTRM" (Yes/No) renamed "IPYCSTRM AvailableQty": the item's
-  #   AvailableQty at IPYCSTRM, -1 when the item is not stocked there
-  #   (thousands-separated; same change as PBO v1.11)
+  #   AvailableQty at IPYCSTRM, blank when the item is not stocked there
+  #   (thousands-separated; same change as PBO v1.11; showed -1 until
+  #   2026-11-11)
   # ---------------------------------------------------------------------
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Allocation'
   file_name_split_token: "Report"

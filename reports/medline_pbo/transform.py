@@ -471,13 +471,12 @@ def assemble_output(df_full, df_review_to_merge, timestamp_value, ipyc_qty):
     """Join review recommendations back and attach the inventory timestamp.
 
     ``IPYCSTRM AvailableQty`` (v1.11, was the 'In IPYCSTRM' Yes/No flag) holds
-    the item's AvailableQty at IPYCSTRM, or -1 when the item is not stocked there.
+    the item's AvailableQty at IPYCSTRM, blank (NaN) when the item is not stocked
+    there (was -1 until 2026-11-11, which users misread as a real quantity).
     """
     df_output = df_full.merge(df_review_to_merge, on="Medline Item", how="left")
     df_output["Inventory Data As Of"] = str(timestamp_value)[:19]
-    df_output["IPYCSTRM AvailableQty"] = df_output["Item"].apply(
-        lambda item: ipyc_qty.get(item, -1)
-    )
+    df_output["IPYCSTRM AvailableQty"] = df_output["Item"].map(ipyc_qty)
     return df_output
 
 
@@ -504,6 +503,76 @@ def merge_autosub(df_output, df_relation, df_autosub_today):
         how="left", validate="many_to_one",
     )
     return df.drop(columns=["PRIMARY ML #"])
+
+
+# ── 3PL Item Inventory (v1.12) ───────────────────────────────────────
+
+THREE_PL_KEYS = ["3PL Manufacturer Item", "3PL UOM"]
+
+
+def _norm_key(series):
+    return series.fillna("").astype(str).str.strip().str.upper()
+
+
+def summarize_three_pl(df_3pl, uom_map):
+    """Total the 3PL file's OH Qty per Manufacturer Item Number + UOM.
+
+    ``Order UM`` is first put in the PBO's SUOM terms: two-letter codes stay as
+    they are, *uom_map* codes are translated (``three_pl.uom_map`` in the
+    config, e.g. PAK->PK, KAR->CT), and any other code stays as it is but is
+    returned in *unknown_uoms* so the run can log a warning.
+
+    Returns ``(summary, unknown_uoms)``. *summary* has one row per
+    (``3PL Manufacturer Item``, ``3PL UOM``) key with the summed ``3PL OH Qty``
+    and a ``3PL Item Description``. Rows sharing a key can describe the item
+    differently, so the description is the one on the key's row with the
+    largest OH Qty (first in file order on ties).
+    """
+    uom = _norm_key(df_3pl["Order UM"])
+    known = (uom.str.len() == 2) | uom.isin(list(uom_map))
+    unknown_uoms = sorted(uom[~known].unique())
+
+    df = pd.DataFrame({
+        "3PL Manufacturer Item": _norm_key(df_3pl["Manufacturer Item Number"]),
+        "3PL UOM": uom.replace(uom_map),
+        "3PL OH Qty": pd.to_numeric(df_3pl["OH Qty"], errors="coerce"),
+        "3PL Item Description": df_3pl["Item Desc"].str.strip(),
+    })
+    df = df[df["3PL Manufacturer Item"] != ""]
+    summary = (
+        df.sort_values("3PL OH Qty", ascending=False, kind="stable")
+        .groupby(THREE_PL_KEYS, sort=False)
+        .agg({"3PL OH Qty": "sum", "3PL Item Description": "first"})
+        .reset_index()
+    )
+    return summary, unknown_uoms
+
+
+def merge_three_pl(df_output, summary, report_date):
+    """Left-join the 3PL summary on Manufacturer Item + SUOM.
+
+    Matched rows get ``3PL OH Qty`` (0 is a real value: on the 3PL list with
+    none on hand), ``3PL Item Description`` and ``3PL Report Date``. Unmatched
+    rows, and every row when no 3PL file was found (*summary* is None), leave
+    all three blank.
+    """
+    df = df_output.copy()
+    if summary is None:
+        df["3PL OH Qty"] = np.nan
+        df["3PL Item Description"] = np.nan
+        df["3PL Report Date"] = pd.NaT
+        return df
+
+    df["3PL Manufacturer Item"] = _norm_key(df["Manufacturer Item"])
+    df["3PL UOM"] = _norm_key(df["SUOM"])
+    df = df.merge(
+        summary, on=THREE_PL_KEYS, how="left", validate="many_to_one",
+        indicator="_3pl_match",
+    )
+    matched = df["_3pl_match"] == "both"
+    df["3PL Report Date"] = pd.Series(pd.Timestamp(report_date), index=df.index).where(matched)
+    print(f"3PL joined — {matched.sum()} of {len(df)} rows matched.")
+    return df.drop(columns=THREE_PL_KEYS + ["_3pl_match"])
 
 
 def add_desired_dioh_columns(

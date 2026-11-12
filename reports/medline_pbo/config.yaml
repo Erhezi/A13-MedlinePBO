@@ -17,6 +17,30 @@ email:
   attachment_extensions: [".xlsx"]
   inbox_lookback_days: 6
 
+# ──────────────────────────────────────────────
+# 3PL Item Inventory (v1.12) — Medline's customer-owned inventory export,
+# mailed Tue/Thu to the same Inbox. Optional: the newest matching file within
+# the lookback is used; with none, the run warns and the 3PL columns stay blank.
+# ──────────────────────────────────────────────
+three_pl:
+  keyword: "3PL Item Inventory"     # subject "Insight Report : 3PL Item Inventory AUTOMATED"
+  expected_sender: "insight@medline.com"
+  attachment_prefix: "3PL Item Inventory"
+  attachment_extensions: [".xls"]
+  inbox_lookback_days: 6
+  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Monte PBO\Raw\3PL'
+  # "Order UM" -> PBO SUOM. Two-letter codes pass through as-is; any code not
+  # listed here also passes through but is logged to ETL health as
+  # "Warning: UOM 'XXX' seen on 3PL file". PAA (pair) and KAR (carton) are
+  # SAP's internal codes for the PBO's PR and CT.
+  uom_map:
+    "PAK": "PK"
+    "BAG": "BG"
+    "ROL": "RL"
+    "BOT": "BO"
+    "PAA": "PR"
+    "KAR": "CT"
+
 # The PLM app moved to the PROCDATASRVPROD instance, so the source reads now
 # live alongside etl_health / persistence. The tables span two databases there
 # (`PLM` and `PLMPreprocessorShared`), so the SQL templates name every table in
@@ -31,7 +55,7 @@ database:
     - "IPYCSTRM"
 
 report:
-  version: "1.11"
+  version: "1.12"
   # --------------------  new in v1.4 - 2026-03-18 --------------------
   # - Multi-location aggregation: IMDCSTRM + IPYCSTRM combined for inventory
   #   and usage so metrics reflect both sites.
@@ -102,6 +126,22 @@ report:
   #   AvailableQty at IPYCSTRM, -1 when the item is not stocked there
   #   (thousands-separated)
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.12 - 2026-11-11 --------------------
+  # - new "3PL OH Qty", "3PL Item Description" and "3PL Report Date" columns
+  #   (three_pl group, header between the autosub and item blues) right after
+  #   "MIOH (AutoSub)", from Medline's "3PL Item Inventory-<stamp>.xls"
+  #   (mailed Tue/Thu; see the three_pl section). "Order UM" is put in SUOM
+  #   terms (PAK->PK, BAG->BG, ROL->RL, BOT->BO, PAA->PR, KAR->CT; two-letter
+  #   codes unchanged), "OH Qty" is totalled per Manufacturer Item Number + UOM and
+  #   left-joined on Manufacturer Item + SUOM. "3PL Report Date" is the file
+  #   footer's date. Unmatched rows leave all three blank.
+  # - No 3PL file in the lookback window is a warning, not a failure: the
+  #   columns stay blank. That warning, and any other Order UM ("Warning: UOM
+  #   'XXX' seen on 3PL file"), goes to the ETL-health Error column.
+  # - The success email names the 3PL file used.
+  # - "IPYCSTRM AvailableQty" is blank (was -1) when the item is not stocked
+  #   at IPYCSTRM.
+  # ---------------------------------------------------------------------
 
   review_threshold: -10 # in days
   # basically this means we need to have at least 10 days of coverage by the estimated available date. 
@@ -117,11 +157,12 @@ report:
   header_row_height: 85
   default_col_width: 8.43
   freeze_panes: [1, 2]   # freeze top row + columns A, B (== freeze pane at C2)
-  column_order: ["base_report", "autosub", "item", "item_group", "rmd", "rmd_debug", "stamp"]
+  column_order: ["base_report", "autosub", "three_pl", "item", "item_group", "rmd", "rmd_debug", "stamp"]
   hide_groups: ["rmd_debug", "stamp"]
   header_colors:
     base_report: { bg: "#94c5e3" }
     autosub: { bg: "#4a7ea6" }   # v1.11 — midway between base_report and item
+    three_pl: { bg: "#255a87", font: "white" }   # v1.12 — midway between autosub and item
     item: { bg: "#003769", font: "white" }
     item_group: { bg: "#112b47", font: "white" }
     rmd: { bg: "#ca006c", font: "white" }
@@ -202,6 +243,11 @@ report:
       - "AutoSub"
       - "MIOH (AutoSub)"
 
+    three_pl:                           # NEW ON v1.12
+      - "3PL OH Qty"
+      - "3PL Item Description"
+      - "3PL Report Date"
+
     item:
       - "Matched IMDC + IPYC"
       - "IPYCSTRM AvailableQty"         # v1.11, was "In IPYCSTRM"
@@ -278,6 +324,7 @@ report:
   date_cols:
     - "Est Depletion Date"
     - "Est Available Date"
+    - "3PL Report Date"  # NEW ON v1.12
     - "Est Delivery Date"
 
   two_decimal_cols:
@@ -303,6 +350,7 @@ report:
     - "Get Well - DIOH"
     - "Get Well - DIOH_ig"
     - "IPYCSTRM AvailableQty"  # NEW ON v1.11
+    - "3PL OH Qty"             # NEW ON v1.12
 
   fill_cols:
     - "Material Description"
@@ -311,6 +359,7 @@ report:
     - "IB Code"
     - "IB Note"
     - "YYYY-MM-DD Notes"
+    - "3PL Item Description"   # NEW ON v1.12
 
   yellow_header_cols:
     - "OverStocked"                    # NEW ON v1.7

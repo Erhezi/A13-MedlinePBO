@@ -4,6 +4,10 @@ Also persists the file's suggested substitutes to the MedlineSubCollection table
 (see persistence.py) right after ingestion, so a database problem fails the
 run before the slower transform.
 
+Since v1.12 it also reads Medline's 3PL Item Inventory export (mailed Tue/Thu)
+for the 3PL columns. That file is optional: when none is found the run warns
+(log, ETL-health Error column, success email) and leaves the columns blank.
+
 Returns the saved output path. The shared runner (src/runner.py) wraps this with
 logging, success/failure notification, ETL-health logging, and maintenance.
 """
@@ -19,6 +23,7 @@ from reports.medline_pbo.ingestion import (
     validate_columns,
     apply_jesse_selection,
     extract_uom_table,
+    read_3pl_file,
 )
 from reports.medline_pbo.transform import (
     prepare_location_inventory_tables,
@@ -34,12 +39,67 @@ from reports.medline_pbo.transform import (
     apply_uom_alternatives,
     assemble_output,
     merge_autosub,
+    summarize_three_pl,
+    merge_three_pl,
     add_desired_dioh_columns,
 )
 
 # Stages this pipeline reports; the runner adds 3 framing stages
-# (config load, success notify, ETL-health) for a total of [1/9]..[9/9].
-STEP_COUNT = 6
+# (config load, success notify, ETL-health) for a total of [1/10]..[10/10].
+STEP_COUNT = 7
+
+
+def _three_pl_mail_config(config):
+    """Return *config* with ``email`` attachment rules swapped for the 3PL file's."""
+    tpl = config["three_pl"]
+    email = {
+        **config["email"],
+        "expected_sender": tpl["expected_sender"],
+        "attachment_prefix": tpl["attachment_prefix"],
+        "attachment_contains": [],
+        "attachment_exclude": [],
+        "attachment_extensions": tpl["attachment_extensions"],
+        "inbox_lookback_days": tpl["inbox_lookback_days"],
+    }
+    return {**config, "email": email}
+
+
+def _load_three_pl(config, secrets, ctx):
+    """Download and summarize the newest 3PL Item Inventory file.
+
+    Returns ``(summary, report_date)``, or ``(None, None)`` when no file is in
+    the lookback window. A missing file is a warning, not an error. Each Order
+    UM outside the known set is logged as an ETL-health warning.
+    """
+    tpl = config["three_pl"]
+    try:
+        save_path, file_name = get_latest_excel_attachment(
+            keyword=tpl["keyword"],
+            destination_path=tpl["destination_path"],
+            config=_three_pl_mail_config(config),
+            secrets=secrets,
+        )
+    except FileNotFoundError:
+        days = tpl["inbox_lookback_days"]
+        print(f"WARNING: no 3PL file in the last {days} days — 3PL columns left blank.")
+        ctx.warnings.append(f"Warning: no 3PL Item Inventory file found in the last {days} days")
+        ctx.email_notes.append(
+            f"3PL file used: none found in the last {days} days (3PL columns are blank)"
+        )
+        ctx.progress.step("3PL file not found — 3PL columns left blank")
+        return None, None
+
+    df_3pl, report_date = read_3pl_file(save_path)
+    summary, unknown_uoms = summarize_three_pl(df_3pl, tpl["uom_map"])
+    for uom in unknown_uoms:
+        print(f"WARNING: unexpected Order UM '{uom}' on the 3PL file; joined untranslated.")
+        ctx.warnings.append(f"Warning: UOM '{uom}' seen on 3PL file")
+    ctx.email_notes.append(f"3PL file used: {file_name}")
+    ctx.progress.step(
+        f"3PL file read: {file_name} — report date {report_date:%Y-%m-%d}, "
+        f"{len(df_3pl)} rows, {len(summary)} Manufacturer Item + UOM keys"
+    )
+    return summary, report_date
 
 
 def run(config, secrets, ctx):
@@ -69,7 +129,10 @@ def run(config, secrets, ctx):
     ctx.row_count = len(df)
     ctx.progress.step(f"File ingested & validated — {ctx.row_count} rows")
 
-    # ── 2b. Persist this file's suggested substitutes ──
+    # ── 2b. 3PL Item Inventory (optional; warns when missing) ──
+    three_pl_summary, three_pl_report_date = _load_three_pl(config, secrets, ctx)
+
+    # ── 2c. Persist this file's suggested substitutes ──
     sub_counts = persistence.persist_file_subs(df, save_path, config["persistence"])
     ctx.progress.step(
         f"Substitutes persisted — {sub_counts['inserted']} new, "
@@ -126,6 +189,7 @@ def run(config, secrets, ctx):
     df_output = merge_autosub(
         df_output, tables["autosub_relation"], tables["autosub_today"],
     )
+    df_output = merge_three_pl(df_output, three_pl_summary, three_pl_report_date)
     df_output = add_desired_dioh_columns(
         df_output,
         target_date=report_cfg.get("desired_dioh_target_date", "2026-11-16"),

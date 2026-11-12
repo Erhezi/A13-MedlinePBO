@@ -18,7 +18,8 @@ def build_enrichment(df_inv, df_usage, df_long_desc):
 
     Returns ``(df_inv_agg, df_usage_agg, df_ehc)``; ``df_ehc`` carries
     ``IPYCSTRM AvailableQty`` (v1.9, was the 'In IPYCSTRM' Yes/No flag): the
-    item's AvailableQty at IPYCSTRM, or -1 when the item is not stocked there.
+    item's AvailableQty at IPYCSTRM, blank (NaN) when the item is not stocked
+    there (was -1 until 2026-11-11, which users misread as a real quantity).
     """
     df_inv_agg = (
         df_inv.groupby(["Item", "DefaultBuyUOM", "BuyUOMMultiplier", "StockUOM"])
@@ -36,9 +37,7 @@ def build_enrichment(df_inv, df_usage, df_long_desc):
     # The inventory read keeps one row per Location + Item.
     ipyc = df_inv[df_inv["Location"] == "IPYCSTRM"]
     ipyc_qty = dict(zip(ipyc["Item"], ipyc["AvailableQty"]))
-    df_ehc["IPYCSTRM AvailableQty"] = df_ehc["Item"].apply(
-        lambda x: ipyc_qty.get(x, -1)
-    )
+    df_ehc["IPYCSTRM AvailableQty"] = df_ehc["Item"].map(ipyc_qty)
     return df_inv_agg, df_usage_agg, df_ehc
 
 

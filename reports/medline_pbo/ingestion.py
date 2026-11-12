@@ -15,6 +15,43 @@ def read_pbo_file(file_path, required_columns=None):
     return df
 
 
+THREE_PL_REQUIRED_COLUMNS = ["Manufacturer Item Number", "Item Desc", "OH Qty", "Order UM"]
+
+_STAMP_DATE = re.compile(r"-(\d{4}-\d{2}-\d{2})-\d{2}-\d{2}-\d{2}\.")
+
+
+def read_3pl_file(file_path):
+    """Read Medline's 3PL Item Inventory export (v1.12).
+
+    Layout: one header row (some names carry trailing spaces, e.g.
+    ``Manufacturer ``), the data rows, then a footer of single-cell rows: the
+    title "3PL Item Inventory" and the report date. Returns
+    ``(df, report_date)`` with the footer dropped and column names stripped.
+    The report date comes from the footer, falling back to the file name's
+    ``-yyyy-mm-dd-hh-mm-ss`` stamp.
+    """
+    df = pd.read_excel(file_path, engine="calamine", dtype=str)
+    df.columns = df.columns.str.strip()
+    missing = [c for c in THREE_PL_REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(f"3PL file validation failed. Missing columns: {missing}")
+
+    footer = df.iloc[:, 1:].isna().all(axis=1)
+    # calamine reads the footer's Excel date as an ISO string under dtype=str.
+    footer_dates = pd.to_datetime(
+        df.loc[footer, df.columns[0]], errors="coerce", format="ISO8601"
+    ).dropna()
+    if not footer_dates.empty:
+        report_date = footer_dates.iloc[-1]
+    else:
+        stamp = _STAMP_DATE.search(str(file_path))
+        if stamp is None:
+            raise ValueError(f"3PL file has no report date in its footer or name: {file_path}")
+        report_date = pd.Timestamp(stamp.group(1))
+        print(f"WARNING: 3PL footer has no report date; using the file name's {report_date:%Y-%m-%d}.")
+    return df.loc[~footer].reset_index(drop=True), report_date.normalize()
+
+
 def validate_columns(df, required_columns):
     """Raise ValueError if any *required_columns* are missing from *df*."""
     missing = [c for c in required_columns if c not in df.columns]
