@@ -260,8 +260,16 @@ def aggregate_item_groups(df_msub, df_plmusage, review_threshold):
 
 
 def build_full_dataset(df_msub, df_ig):
-    """Merge the item-group metrics back onto the main dataset."""
-    return df_msub.merge(df_ig, on=["Item", "Item Group"], how="left")
+    """Merge the item-group metrics back onto the main dataset.
+
+    ``_row`` numbers the result's rows. The review and alternative-UOM steps
+    carry it so ``assemble_output`` joins their results back row for row: a
+    Medline Item can sit on several rows (listed once per SoldTo, or once per
+    substitute), and joining on Medline Item alone multiplied those rows.
+    """
+    df = df_msub.merge(df_ig, on=["Item", "Item Group"], how="left")
+    df["_row"] = range(len(df))
+    return df
 
 
 # ── Step 5: review recommendations ──────────────────────────────────
@@ -269,7 +277,7 @@ def build_full_dataset(df_msub, df_ig):
 def calculate_review_recommendations(df_full, review_threshold):
     """Filter to 'Review' items and compute target coverage & order qty."""
     cols = [
-        "Medline Item", "Packaging String", "Item", "Flag",
+        "_row", "Medline Item", "Packaging String", "Item", "Flag",
         "With Sub", "Flag_ig", "Item Group", "Replace Item",
         "AverageDailyIssueOut", "AverageDailyIssueOut_ig",
         "DefaultBuyUOM", "BuyUOMMultiplier",
@@ -404,9 +412,9 @@ def apply_uom_alternatives(df_review, medline_cf_df):
     else:
         print("UOM validation: all good.")
 
-    # UOM prep & split into same / alt
+    # UOM prep & split into same / alt (per review row: see build_full_dataset)
     uom_prep = df_review.merge(medline_cf_df, on="Medline Item", how="left")[
-        ["Medline Item", "DefaultBuyUOM", "BuyUOMMultiplier",
+        ["_row", "Medline Item", "DefaultBuyUOM", "BuyUOMMultiplier",
          "Recommended Order Qty (EA)", "Recomended Order Qty (in BuyUOM)",
          "Distributor Base UOM", "Conversion Factor", "from UOM", "to UOM"]
     ].copy()
@@ -423,11 +431,11 @@ def apply_uom_alternatives(df_review, medline_cf_df):
     alt_uom.drop_duplicates(inplace=True)
 
     medline_alt = same_uom[
-        ["Medline Item", "DefaultBuyUOM", "BuyUOMMultiplier", "to UOM",
+        ["_row", "Medline Item", "DefaultBuyUOM", "BuyUOMMultiplier", "to UOM",
          "Recommended Order Qty (EA)", "Recomended Order Qty (in BuyUOM)"]
     ].merge(
-        alt_uom[["Medline Item", "from UOM", "to UOM", "Conversion Factor"]],
-        on=["Medline Item", "to UOM"], how="left",
+        alt_uom[["_row", "Medline Item", "from UOM", "to UOM", "Conversion Factor"]],
+        on=["_row", "Medline Item", "to UOM"], how="left",
     )
     medline_alt["from UOM"] = medline_alt.apply(_remove_default_uom, axis=1)
 
@@ -436,7 +444,7 @@ def apply_uom_alternatives(df_review, medline_cf_df):
         medline_alt["Recommended Order Qty (EA)"] / medline_alt["Conversion Factor"]
     )
     medline_alt["Alternative UOM Group"] = (
-        medline_alt.groupby("Medline Item").cumcount() + 1
+        medline_alt.groupby("_row").cumcount() + 1
     )
     medline_alt["Alternative UOM Group"] = (
         "Group " + medline_alt["Alternative UOM Group"].astype(str)
@@ -445,14 +453,14 @@ def apply_uom_alternatives(df_review, medline_cf_df):
     # merge back to review
     df_review_calc = df_review.merge(
         medline_alt[
-            ["Medline Item", "Alternative UOM Group", "to UOM", "from UOM",
+            ["_row", "Medline Item", "Alternative UOM Group", "to UOM", "from UOM",
              "Conversion Factor", "Recomnded Order Qty (In Alternative from UOM)"]
         ],
-        on="Medline Item", how="left",
+        on=["_row", "Medline Item"], how="left",
     )
 
     keep_cols = [
-        "Medline Item",
+        "_row", "Medline Item",
         "Alternative UOM Group", "Conversion Factor",
         "Recomended Order Qty (in BuyUOM)",
         "Recomended Order Qty (in BuyUOM)_Repl.",
@@ -470,11 +478,17 @@ def apply_uom_alternatives(df_review, medline_cf_df):
 def assemble_output(df_full, df_review_to_merge, timestamp_value, ipyc_qty):
     """Join review recommendations back and attach the inventory timestamp.
 
+    Review results join on ``_row`` (see build_full_dataset), so each row gets
+    only its own recommendations: one row per alternative UOM group.
+
     ``IPYCSTRM AvailableQty`` (v1.11, was the 'In IPYCSTRM' Yes/No flag) holds
     the item's AvailableQty at IPYCSTRM, blank (NaN) when the item is not stocked
     there (was -1 until 2026-11-11, which users misread as a real quantity).
     """
-    df_output = df_full.merge(df_review_to_merge, on="Medline Item", how="left")
+    df_output = df_full.merge(
+        df_review_to_merge, on=["_row", "Medline Item"], how="left",
+        validate="one_to_many",
+    ).drop(columns="_row")
     df_output["Inventory Data As Of"] = str(timestamp_value)[:19]
     df_output["IPYCSTRM AvailableQty"] = df_output["Item"].map(ipyc_qty)
     return df_output
