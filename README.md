@@ -10,24 +10,25 @@ The root folder in the examples below is:
 your_path_to_this_folder\A13-MedlinePBO
 ```
 
-## Project Layout — Four Pipelines
+## Project Layout — Five Pipelines
 
-This repo runs **four** pipelines that share common infrastructure:
+This repo runs **five** pipelines that share common infrastructure:
 
 - **Medline PBO** — run `python main.py --report medline_pbo`, config `reports/medline_pbo/config.yaml`, launcher `run_medline_pbo.bat` (scheduled Tue/Thu).
 - **Medline Allocation** — run `python main.py --report medline_allocation`, config `reports/medline_allocation/config.yaml`, launcher `run_medline_allocation.bat` (scheduled Mon–Fri).
 - **Medline Fill-Kill** — run `python main.py --report medline_fillkill`, config `reports/medline_fillkill/config.yaml`, launcher `run_medline_fillkill.bat` (scheduled hourly, 7 AM–11 PM). A data load only, with no Excel output; see below.
 - **Medline Daily Autosub** — run `python main.py --report medline_autosub`, config `reports/medline_autosub/config.yaml`, launcher `run_medline_autosub.bat` (scheduled every 4 hours on weekdays, 7:50 AM–5 PM, i.e. 7:50 AM, 11:50 AM and 3:50 PM; loads each new export once). A data load only, with no Excel output; see below.
+- **Medline Order Timing** — run `python main.py --report medline_ordertiming`, config `reports/medline_ordertiming/config.yaml`, launcher `run_medline_ordertiming.bat` (to be scheduled hourly from LUM go-live; one test file a day until then). A data load only, with no Excel output; see below.
 
 All of them run through the single entry point `main.py`, selected with `--report`. Add `--config <path>` only to override a report's default config.
 
-One operational note for **Medline Fill-Kill**: each run downloads the newest `WPH - FILL KILL REPORT-<stamp>.xlsx` attachment, truncates and reloads `SCSFileIngestor.MedlineFillKill.medlinefillkill_stg` with it, then upserts (MERGE) staging into `SCSFileIngestor.MedlineFillKill.MedlineFillKill`, keyed on (`Sales Order #`, `Order Line #`). Source column names are kept as-is; `PO` (first 10 digits of `PO #`) and `POLine` (`PO Line` without leading zeros) are added. Rows are never deleted, and a matched row is only updated (and its `update stamp` bumped) when a value changed, so re-loading a file is harmless. To load files already on disk (initial history, or an hour the schedule missed), stitch them in one pass with:
+One operational note for **Medline Fill-Kill**: each run downloads the newest `WPH - FILL KILL REPORT-<stamp>.xlsx` attachment, truncates and reloads `SCSFileIngestor.MedlineFillKill.medlinefillkill_stg` with it, then upserts (MERGE) staging into `SCSFileIngestor.MedlineFillKill.MedlineFillKill`, keyed on (`Sales Order #`, `Order Line #`). Source column names are kept as-is; `PO` (first 10 digits of `PO #`), `POLine` (`PO Line` without leading zeros, as `VARCHAR(5)` text matching `POLine` in PLMPreprocessorShared's PO tables; an `INT` before v1.1) and, since v1.1, `ShipTo` (`Ship-To` without leading zeros, kept as text) are added. Rows are never deleted, and a matched row is only updated (and its `update stamp` bumped) when a value changed, so re-loading a file is harmless. To load files already on disk (initial history, or an hour the schedule missed), stitch them in one pass with:
 
 ```powershell
 python -m reports.medline_fillkill.backfill "I:\Procurement PMO\dli2\Medline FillKill\test"   # add --dry-run to parse only
 ```
 
-Both tables are created automatically on first run if missing. Success emails are off in `prd` (`notification.success_recipients: []`); failures still email.
+Both tables are created automatically on first run if missing. Success emails are off in `prd` (`notification.success_recipients: []`); failures still email. If the newest mail is more than 90 minutes old (`email.max_mail_age_minutes`), Medline hasn't sent a new file. The run still loads the newest one, but its `SUCCESS` row carries a "Warning: no new file in N min" in the `Error` column. Each download is kept in `Medline FillKill\Raw` under its own stamped name. In the monthly maintenance window (days 3–10), files from before this month move to `Medline FillKill\Archived\<yyyy>\<mm>`, by the date in the file name (`maintenance.archive_by_month`).
 
 One operational note for **Medline Daily Autosub**: Medline mails `Daily Autosub Management Report-<stamp>.xls` around 7:20 AM and sometimes re-sends a fuller version later the same day. The task runs every 4 hours (7:50 AM, 11:50 AM, 3:50 PM) and loads each new export once:
 
@@ -37,6 +38,15 @@ One operational note for **Medline Daily Autosub**: Medline mails `Daily Autosub
 - Rows go to `SCSFileIngestor.MedlineAutoSub.MedlineAutosub` (identity `ID` primary key, unique on `PRIMARY ML #`, `AutoSub`, `Report Date`). The pairs go to `MedlineAutoSub.MedlineAutosubRelation` (primary key `PRIMARY ML #`, `AutoSub`), where `create stamp` is when a pair was first seen and `update stamp` is when its `PRIMARY PARENT` or `AutoSub Seq` last changed.
 
 To load files already on disk, run `python -m reports.medline_autosub.backfill <folder>` (add `--dry-run` to parse only). A backfill writes no ETL-health row, so the day's scheduled run still loads the newest file.
+
+One operational note for **Medline Order Timing**: Medline mails `MHS - ORDER DETAIL REPORT-<stamp>.xls` (subject "Insight Report : MHS - ORDER DETAIL REPORT", from `insight@medline.com`). Each file is a day-to-date snapshot with one row per order line: a later file the same day repeats the earlier lines plus the new ones, and the footer's single-day `Date Range` becomes `Report Date`. Each run downloads the newest file mailed in the last day and **replaces** that Report Date. In one transaction it truncates and reloads `SCSFileIngestor.MedlineOrderTiming.medlineordertiming_stg`, deletes that day's rows from `MedlineOrderTiming.MedlineOrderTiming`, and inserts staging in their place. The first file of a new day starts a new Report Date and leaves earlier days alone.
+
+- The primary key is (`Report Date`, `Order #`, `Order Line`). `load stamp` is when the row's file was loaded. Reloading a file is harmless, and a file with no lines empties its day. The replace follows the footer's date, not the file name, so each hourly file's new stamp doesn't matter; the name is kept in `source file`.
+- Every download stays in `Medline FillKill\OrderTiming\Raw` under its own stamped name, so the raw files keep each day's hour-by-hour history that the table doesn't. In the monthly maintenance window (days 3–10), files from before this month move to `OrderTiming\Archived\<yyyy>\<mm>`, by the date in the file name. Nothing in `Archived` is purged.
+- Source column names are kept as-is, including Medline's typos (`EDI Date Re`, `EDI Data Recv Time`, and `Mins  to Order Create` with two spaces). `PO` (first 10 digits of `PO#`), `POLine` (`PO Line #` without leading zeros, `VARCHAR(5)`) and `ShipTo` (`Ship-To #` without leading zeros) are added with the same rule as Fill-Kill. The two tables join on `PO` + `POLine` or on `ShipTo`, and `PO` + `POLine` also join to PLMPreprocessorShared's PO tables.
+- The run fails before writing if the file's `# of Order Lines` total disagrees with the rows read (a truncated attachment), or if a line is missing or repeats `Order #` + `Order Line`. A mismatch in the PO, order or bad-line totals, a day that shrinks, or a newest mail more than 90 minutes old (`email.max_mail_age_minutes`, as for Fill-Kill), is only a warning in the `Error` column of the `SUCCESS` row.
+
+To load files already on disk, run `python -m reports.medline_ordertiming.backfill <folder>` (add `--dry-run` to parse only). It loads only the fullest file of each Report Date, because file-name stamps use a 12-hour clock and can't order a day's files.
 
 One operational note for **Medline PBO**: since v1.9 each run also persists Medline's suggested substitutes. The file's distinct (`Medline Item`, `Customer Prefered Sub`, `Substitute Material Number`) rows, for lines where at least one sub column is filled, are staged into `SCSFileIngestor.MedlinePBO.medlinesubcollection_stg` and upserted into `MedlinePBO.MedlineSubCollection` on that key (an empty sub column is stored as `''`). A database error here fails the run before the report is built. To reload past files, run `python -m reports.medline_pbo.backfill_subs` (defaults to the Raw folder, files dated 2026-08-13 on; `--since` and `--dry-run` are available). Since v1.11 the report also reads the Daily Autosub tables, matched on `Medline Item` = `PRIMARY ML #`. `AutoSub` is the item's `AutoSub Seq` 1 pair in `MedlineAutoSub.MedlineAutosubRelation`; if there are several, the one on the latest daily report is used. `MIOH (AutoSub)` is that pair's MIOH on today's report in `MedlineAutoSub.MedlineAutosub`, and is blank when today's report does not list the pair. Only the 7:50 AM Autosub run comes before the 10:30 AM PBO run. If that run does not load today's file (late mail or a failure), `MIOH (AutoSub)` is left blank and the log shows a WARNING; `AutoSub` still comes from the relation table.
 

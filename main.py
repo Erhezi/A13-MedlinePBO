@@ -5,6 +5,7 @@ Usage:
     python main.py --report medline_allocation
     python main.py --report medline_fillkill
     python main.py --report medline_autosub
+    python main.py --report medline_ordertiming
 
     if need to override the default config path, use --config:
     python main.py --report medline_pbo --config <path-to-config.yaml>
@@ -29,6 +30,7 @@ from reports.medline_pbo import pipeline as medline_pbo_pipeline
 from reports.medline_allocation import pipeline as medline_allocation_pipeline
 from reports.medline_fillkill import pipeline as medline_fillkill_pipeline
 from reports.medline_autosub import pipeline as medline_autosub_pipeline
+from reports.medline_ordertiming import pipeline as medline_ordertiming_pipeline
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -51,6 +53,10 @@ REGISTRY = {
     "medline_autosub": (
         os.path.join("reports", "medline_autosub", "config.yaml"),
         medline_autosub_pipeline,
+    ),
+    "medline_ordertiming": (
+        os.path.join("reports", "medline_ordertiming", "config.yaml"),
+        medline_ordertiming_pipeline,
     ),
 }
 

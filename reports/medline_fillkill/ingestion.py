@@ -8,16 +8,19 @@ blank. Those footer rows are dropped by shape (see ``remove_footer``).
 Every export must honour the primary key (Sales Order #, Order Line #): a
 missing or repeated key fails the run before anything is written.
 
-Source column names are kept as-is (whitespace-stripped). Two derived columns
-are appended:
+Source column names are kept as-is (whitespace-stripped). Three derived columns
+are appended (see src/medline_keys.py):
 
 - ``PO``     — the leading 10 digits of ``PO #`` ("2600301531-STPO" -> "2600301531")
-- ``POLine`` — ``PO Line`` with leading zeros removed ("000003" -> 3)
+- ``POLine`` — ``PO Line`` with leading zeros removed ("000003" -> "3")
+- ``ShipTo`` — ``Ship-To`` with leading zeros removed ("0002464430" -> "2464430")
 """
 
 import os
 
 import pandas as pd
+
+from src import medline_keys
 
 KEY_COLUMNS = ["Sales Order #", "Order Line #"]
 
@@ -29,7 +32,7 @@ SOURCE_COLUMNS = [
     "Filled Qty", "Plant", "Buyer Name",
     "Internal Order Comments from SAP (Z106)",
 ]
-DERIVED_COLUMNS = ["PO", "POLine"]
+DERIVED_COLUMNS = ["PO", "POLine", "ShipTo"]
 SOURCE_FILE_COLUMN = "source file"
 
 # Column order shared by the staging and target tables (see persistence.py).
@@ -76,24 +79,10 @@ def remove_footer(df):
     return df[~footer].reset_index(drop=True).copy()
 
 
-def add_po_columns(df):
-    """Append PO (leading 10 digits of 'PO #') and POLine ('PO Line' sans zeros)."""
-    df["PO"] = df["PO #"].str.extract(r"^(\d{10})", expand=False)
-    df["POLine"] = pd.to_numeric(df["PO Line"], errors="coerce").astype("Int64")
-
-    bad_po = df["PO"].isna() & df["PO #"].notna()
-    if bad_po.any():
-        print(
-            f"WARNING: {bad_po.sum()} row(s) have a 'PO #' that does not start with "
-            f"10 digits; PO left blank. e.g. {df.loc[bad_po, 'PO #'].head(3).tolist()}"
-        )
-    bad_line = df["POLine"].isna() & df["PO Line"].notna()
-    if bad_line.any():
-        print(
-            f"WARNING: {bad_line.sum()} row(s) have a non-numeric 'PO Line'; POLine "
-            f"left blank. e.g. {df.loc[bad_line, 'PO Line'].head(3).tolist()}"
-        )
-    return df
+def add_derived_columns(df):
+    """Append PO and POLine (from 'PO #' / 'PO Line') and ShipTo (from 'Ship-To')."""
+    df = medline_keys.add_po_columns(df, "PO #", "PO Line")
+    return medline_keys.add_ship_to_column(df, "Ship-To")
 
 
 def coerce_types(df):
@@ -138,6 +127,6 @@ def prepare(file_path):
     """Read, validate and cleanse ONE export into the load shape."""
     df = read_fillkill_file(file_path)
     validate_keys(df, os.path.basename(file_path))
-    df = add_po_columns(df)
+    df = add_derived_columns(df)
     df = coerce_types(df)
     return df[LOAD_COLUMNS]

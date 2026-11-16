@@ -21,15 +21,33 @@ email:
   attachment_prefix: "WPH - FILL KILL REPORT"
   attachment_extensions: [".xlsx"]
   inbox_lookback_days: 1
+  # Hourly feed: if the newest mail is older than this, the run still loads it
+  # but writes a "Warning: no new file in N min" to the ETL-health Error column
+  # of its SUCCESS row. Remove the key to turn the check off.
+  max_mail_age_minutes: 90
 
 report:
-  version: "1.0"
+  version: "1.1"
   # --------------------  v1.0 - 2026-10-06 --------------------
   # - initial load: 11 daily exports (2026-09-20 .. 2026-09-30) stitched and
   #   upserted via reports/medline_fillkill/backfill.py
   # - source column names kept as-is (stripped); added PO (leading 10 digits
   #   of "PO #") and POLine ("PO Line" without leading zeros, INT)
   # - primary key (Sales Order #, Order Line #)
+  # ---------------------------------------------------------------------
+  # --------------------  new in v1.1 - 2026-11-16 --------------------
+  # - added ShipTo ("Ship-To" without leading zeros, VARCHAR), the same rule
+  #   as the Order Timing feed's ShipTo, so the two join on ship-to
+  # - the column was appended to both existing tables automatically (see
+  #   src/staged_upsert.ensure_tables); the 291 rows already loaded were
+  #   back-filled once by SQL, without touching their update stamp
+  # - POLine is now text, VARCHAR(5) ("000003" -> "3"), to match POLine in
+  #   PLMPreprocessorShared's PO tables; both tables ALTERed from INT once
+  #   (existing values convert as-is)
+  # - monthly maintenance archives raw files into Archived\<yyyy>\<mm>
+  #   (maintenance.archive_by_month) instead of one flat folder
+  # - a run whose newest mail is over 90 min old (email.max_mail_age_minutes)
+  #   still loads it but logs SUCCESS with a "no new file" warning
   # ---------------------------------------------------------------------
   # No Excel output. output_dir/output_glob are used only by the monthly
   # maintenance step, to archive downloaded raw files older than this month.
@@ -62,6 +80,9 @@ maintenance:
   cleanup_day_range: [3, 10]
   output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Archived'
   output_glob: "WPH - FILL KILL REPORT*.xlsx"
+  # Archived\<yyyy>\<mm>, by the date in the file name (an hourly feed fills a
+  # flat folder fast). Files keep their name; nothing in Archived is purged.
+  archive_by_month: true
 
 # ──────────────────────────────────────────────
 # ETL Health — process status tracking

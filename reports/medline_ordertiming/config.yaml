@@ -1,0 +1,110 @@
+# ──────────────────────────────────────────────
+# Medline Order Detail (Orders & Confirms Timing) Pipeline — Configuration
+#   Hourly day-replace load: newest mailed export ->
+#   [MedlineOrderTiming].[medlineordertiming_stg] -> its Report Date replaced
+#   in [MedlineOrderTiming].[MedlineOrderTiming], keyed on
+#   (Report Date, Order #, Order Line).
+#   Until LUM go-live Medline sends one test file a day (~1-2 PM ET);
+#   afterwards hourly, like Fill-Kill.
+# ──────────────────────────────────────────────
+
+email:
+  aad_endpoint: "https://login.microsoftonline.com"
+  graph_endpoint: "https://graph.microsoft.com"
+  from_email: "procurementdatateam@montefiore.org"
+  # Subject: "Insight Report : MHS - ORDER DETAIL REPORT"; matched
+  # case-insensitively. The prefix is matched against the file name
+  # ("MHS - ORDER DETAIL REPORT-2026-11-12-01-07-19.xls").
+  keyword: "ORDER DETAIL REPORT"
+  # Only mail whose From address is this account is considered (case-insensitive).
+  expected_sender: "insight@medline.com"
+  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\OrderTiming\Raw'
+  max_messages: 100
+  attachment_prefix: "MHS - ORDER DETAIL REPORT"
+  attachment_extensions: [".xls"]
+  inbox_lookback_days: 1
+  # Hourly feed: if the newest mail is older than this, the run still loads it
+  # but writes a "Warning: no new file in N min" to the ETL-health Error column
+  # of its SUCCESS row. Remove the key to turn the check off.
+  max_mail_age_minutes: 90
+
+report:
+  version: "1.0"
+  # --------------------  v1.0 - 2026-11-16 --------------------
+  # - one row per order line; source column names kept as-is (stripped,
+  #   typos included); added PO (leading 10 digits of "PO#"), POLine
+  #   ("PO Line #" without leading zeros, VARCHAR(5) as in
+  #   PLMPreprocessorShared's PO tables), ShipTo ("Ship-To #" without
+  #   leading zeros, VARCHAR), Report Date (footer "Date Range", single day)
+  # - each load replaces its Report Date (delete + insert in one transaction);
+  #   primary key (Report Date, Order #, Order Line)
+  # - "# of Order Lines" total must match the rows read; the PO / order /
+  #   bad-line totals only warn (ETL-health Error column)
+  # - initial load: the daily test files of 2026-11-10 (no lines), -11 and
+  #   -12 via reports/medline_ordertiming/backfill.py
+  # - raw files stay in Raw (one per hourly download, each under its own
+  #   stamped name); monthly maintenance moves last month's into
+  #   Archived\<yyyy>\<mm> (maintenance.archive_by_month)
+  # - a run whose newest mail is over 90 min old (email.max_mail_age_minutes)
+  #   still loads it but logs SUCCESS with a "no new file" warning
+  # ---------------------------------------------------------------------
+  # No Excel output. output_dir is used only by the monthly maintenance step,
+  # to archive downloaded raw files older than this month.
+  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\OrderTiming\Raw'
+
+# ──────────────────────────────────────────────
+# Notification — success_recipients is empty on purpose, as for Fill-Kill.
+# Failures always email (including no mail in the last day). Test mode
+# (--test) redirects both to test_recipients.
+# ──────────────────────────────────────────────
+notification:
+  report_name: "Medline Order Timing"
+  success_recipients: []
+  success_cc_recipients: []
+  failure_recipients:
+    - "dli2@montefiore.org"
+  test_recipients:
+    - "dli2@montefiore.org"
+
+# ──────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────
+logging:
+  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\OrderTiming\Log'
+
+# ──────────────────────────────────────────────
+# Maintenance — monthly cleanup & archiving
+# ──────────────────────────────────────────────
+maintenance:
+  cleanup_day_range: [3, 10]
+  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\OrderTiming\Archived'
+  output_glob: "MHS - ORDER DETAIL REPORT*.xls"
+  # Archived\<yyyy>\<mm>, by the date in the file name (an hourly feed fills a
+  # flat folder fast). Files keep their name; nothing in Archived is purged.
+  archive_by_month: true
+
+# ──────────────────────────────────────────────
+# ETL Health — process status tracking
+# ──────────────────────────────────────────────
+etl_health:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineReport"
+  table: "ETLHealth"
+  process_name: "Medline Order Timing"
+  process_id: "MEDORDTIMING_H_DL"
+  process_frequency: "Hourly"
+
+# ──────────────────────────────────────────────
+# Persistence — staging + target tables (created on first run if missing)
+# ──────────────────────────────────────────────
+persistence:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: 'YNBBSTVWP02\PROCDATASRVPROD'
+  database: "SCSFileIngestor"
+  trusted_connection: "yes"
+  schema: "MedlineOrderTiming"
+  staging_table: "medlineordertiming_stg"   # truncated + reloaded every run
+  target_table: "MedlineOrderTiming"        # PK (Report Date, Order #, Order Line); latest file per day

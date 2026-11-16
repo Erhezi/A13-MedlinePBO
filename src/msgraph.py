@@ -1,8 +1,17 @@
 import base64
 import os
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple, Optional
 
 import requests
+
+
+class LatestAttachment(NamedTuple):
+    """The newest matching attachment, saved to disk, and when its mail arrived."""
+
+    save_path: str
+    file_name: str
+    received_at: Optional[datetime]   # timezone-aware (UTC), from Graph's receivedDateTime
 
 
 # Fallbacks used only when a report's config omits the key.
@@ -206,12 +215,46 @@ def _find_matching_attachment(
                     "Target Found: "
                     f"{message.get('subject', '')} ({message['receivedDateTime']})"
                 )
-                return _save_attachment(attachment, destination_path)
+                save_path, file_name = _save_attachment(attachment, destination_path)
+                received_at = datetime.fromisoformat(
+                    message["receivedDateTime"].replace("Z", "+00:00")
+                )
+                return save_path, file_name, received_at
 
-    return None, None
+    return None, None, None
 
 
-def get_latest_excel_attachment(
+def get_latest_excel_attachment(*args, **kwargs):
+    """Download the newest matching attachment; return ``(save_path, file_name)``.
+
+    Same arguments as ``download_latest_excel_attachment``, which also returns
+    when the mail was received.
+    """
+    found = download_latest_excel_attachment(*args, **kwargs)
+    return found.save_path, found.file_name
+
+
+def stale_mail_warning(found, max_age_minutes, now=None):
+    """Return a "Warning: ..." line when *found*'s mail is over *max_age_minutes* old.
+
+    For hourly feeds: the run still loads the newest file, but if Medline has
+    sent nothing new for longer than the limit the table is that old too.
+    Returns None when the mail is fresh enough or no limit is configured.
+    """
+    if not max_age_minutes or found.received_at is None:
+        return None
+    now = now or datetime.now(timezone.utc)
+    age_minutes = int((now - found.received_at).total_seconds() // 60)
+    if age_minutes <= max_age_minutes:
+        return None
+    return (
+        f"Warning: no new file in {age_minutes} min (limit {max_age_minutes}); "
+        f"loaded the newest, {found.file_name}, received "
+        f"{found.received_at.astimezone():%Y-%m-%d %H:%M}"
+    )
+
+
+def download_latest_excel_attachment(
     keyword,
     destination_path,
     config,
@@ -240,7 +283,7 @@ def get_latest_excel_attachment(
 
     Returns
     -------
-    (save_path, file_name) on success.
+    LatestAttachment(save_path, file_name, received_at) on success.
 
     Raises
     ------
@@ -290,7 +333,7 @@ def get_latest_excel_attachment(
         received_since=inbox_cutoff,
         sender=expected_sender,
     )
-    save_path, file_name = _find_matching_attachment(
+    save_path, file_name, received_at = _find_matching_attachment(
         graph,
         user,
         headers,
@@ -302,7 +345,7 @@ def get_latest_excel_attachment(
         attachment_exclude,
     )
     if save_path is not None:
-        return save_path, file_name
+        return LatestAttachment(save_path, file_name, received_at)
 
     name_rules = (
         f"starting with '{attachment_prefix}' and ending with one of {extensions}"

@@ -12,7 +12,10 @@ from src import staged_upsert
 from reports.medline_fillkill.ingestion import KEY_COLUMNS, LOAD_COLUMNS
 
 # Column -> SQL type, in LOAD_COLUMNS order. Identifiers keep their leading
-# zeros (VARCHAR); PO is the 10-digit PO number and POLine the integer line.
+# zeros (VARCHAR); PO is the 10-digit PO number, and POLine / ShipTo the PO line
+# / ship-to number without leading zeros (still VARCHAR; POLine is VARCHAR(5)
+# like the PO line in PLMPreprocessorShared). In v1.1 ShipTo was appended to the
+# existing tables by ensure_tables and POLine altered from INT by hand.
 COLUMN_TYPES = {
     "Sold-To": "VARCHAR(20)",
     "Sold-To Name": "VARCHAR(100)",
@@ -38,7 +41,8 @@ COLUMN_TYPES = {
     "Buyer Name": "VARCHAR(100)",
     "Internal Order Comments from SAP (Z106)": "VARCHAR(1000)",
     "PO": "VARCHAR(10)",
-    "POLine": "INT",
+    "POLine": "VARCHAR(5)",
+    "ShipTo": "VARCHAR(20)",
     "source file": "VARCHAR(260)",
 }
 assert list(COLUMN_TYPES) == LOAD_COLUMNS, "COLUMN_TYPES must follow LOAD_COLUMNS"

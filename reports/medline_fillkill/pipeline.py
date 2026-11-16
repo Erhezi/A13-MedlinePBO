@@ -11,7 +11,7 @@ For a one-off load of files already on disk (initial history, or re-loading a
 missed hour) use ``python -m reports.medline_fillkill.backfill``.
 """
 
-from src.msgraph import get_latest_excel_attachment
+from src.msgraph import download_latest_excel_attachment, stale_mail_warning
 
 from reports.medline_fillkill import ingestion, persistence
 
@@ -23,15 +23,20 @@ STEP_COUNT = 3
 def run(config, secrets, ctx):
     email_cfg = config["email"]
 
-    # ── 1. Download latest Excel attachment ──
-    save_path, latest_file = get_latest_excel_attachment(
+    # ── 1. Download latest Excel attachment (warn if Medline sent nothing new lately) ──
+    found = download_latest_excel_attachment(
         keyword=email_cfg["keyword"],
         destination_path=email_cfg["destination_path"],
         config=config,
         secrets=secrets,
     )
+    save_path = found.save_path
     ctx.source_file_path = save_path
-    ctx.progress.step(f"Email attachment downloaded: {latest_file}")
+    stale = stale_mail_warning(found, email_cfg.get("max_mail_age_minutes"))
+    if stale:
+        print(stale)
+        ctx.warnings.append(stale)
+    ctx.progress.step(f"Email attachment downloaded: {found.file_name}")
 
     # ── 2. Ingest, check the primary key & cleanse (a violation raises -> FAIL) ──
     df = ingestion.prepare(save_path)
