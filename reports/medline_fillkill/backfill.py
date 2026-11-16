@@ -6,7 +6,7 @@ an hourly run, so the staging table is left holding only the newest file, and
 re-running over files already loaded is harmless.
 
 Usage (from the project root):
-    python -m reports.medline_fillkill.backfill "I:\\Procurement PMO\\dli2\\Medline FillKill\\test"
+    python -m reports.medline_fillkill.backfill "I:\\Procurement PMO\\dli2\\Medline FillKill\\Raw"
     python -m reports.medline_fillkill.backfill <file1.xlsx> <file2.xlsx> ...
     python -m reports.medline_fillkill.backfill <folder> --dry-run   # parse only, no DB
 

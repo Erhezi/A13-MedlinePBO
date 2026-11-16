@@ -15,7 +15,10 @@ from reports.medline_fillkill.ingestion import KEY_COLUMNS, LOAD_COLUMNS
 # zeros (VARCHAR); PO is the 10-digit PO number, and POLine / ShipTo the PO line
 # / ship-to number without leading zeros (still VARCHAR; POLine is VARCHAR(5)
 # like the PO line in PLMPreprocessorShared). In v1.1 ShipTo was appended to the
-# existing tables by ensure_tables and POLine altered from INT by hand.
+# existing tables by ensure_tables and POLine altered from INT by hand. In v1.2
+# ensure_tables appended the 15 MHS v3 columns (Product Allocation Qty ..
+# DED UOM Code). Plant, from the earlier WPH export, is no longer loaded but
+# stays in the existing tables.
 COLUMN_TYPES = {
     "Sold-To": "VARCHAR(20)",
     "Sold-To Name": "VARCHAR(100)",
@@ -37,9 +40,23 @@ COLUMN_TYPES = {
     "Order Qty": "INT",
     "UM": "VARCHAR(10)",
     "Filled Qty": "INT",
-    "Plant": "VARCHAR(10)",
     "Buyer Name": "VARCHAR(100)",
     "Internal Order Comments from SAP (Z106)": "VARCHAR(1000)",
+    "Product Allocation Qty": "INT",
+    "Open Product Allocation Qty": "INT",
+    "PA Fulfill Flag": "VARCHAR(10)",
+    "Possible Subst. Item": "VARCHAR(50)",
+    "Customer Preferred Substitute Item": "VARCHAR(50)",
+    "DED Qty": "INT",
+    "DED Valid From Date": "DATE",
+    "Forecast Qty": "DECIMAL(18,3)",
+    "30 Day Delivered Qty": "INT",
+    "Est Avail Date": "DATE",
+    "ReasonTypeText": "VARCHAR(50)",
+    "MBO Type Description": "VARCHAR(100)",
+    "Allocation Period Type": "VARCHAR(20)",
+    "Allocation Level": "VARCHAR(20)",
+    "DED UOM Code": "VARCHAR(50)",
     "PO": "VARCHAR(10)",
     "POLine": "VARCHAR(5)",
     "ShipTo": "VARCHAR(20)",

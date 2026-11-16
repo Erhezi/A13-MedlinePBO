@@ -1,15 +1,24 @@
 """Ingestion & cleansing for the Medline Fill-Kill feed.
 
-The source is Medline's "WPH - FILL KILL REPORT-<yyyy-mm-dd-hh-mm-ss>.xlsx"
-export: one header row, the order lines, then a 3-line footer whose first cell
-carries the report title / date range / run date and whose other cells are
-blank. Those footer rows are dropped by shape (see ``remove_footer``).
+The source is Medline's "MHS - FILL KILL REPORT-<yyyy-mm-dd-hh-mm-ss>.xlsx"
+export (footer title "Medline Insight: LUM Fill-Kill Report v3 - SAP Data
+Direct"): one header row, the order lines, then a 3-line footer whose first
+cell carries the report title / date range / run date and whose other cells
+are blank. Those footer rows are dropped by shape (see ``remove_footer``).
+Each file is a day-to-date snapshot (single-day Date Range): a later file the
+same day repeats the earlier lines, with their latest values, plus new ones.
 
 Every export must honour the primary key (Sales Order #, Order Line #): a
 missing or repeated key fails the run before anything is written.
 
-Source column names are kept as-is (whitespace-stripped). Three derived columns
-are appended (see src/medline_keys.py):
+Source column names are kept as-is (whitespace-stripped), with one exception:
+v3's "Customer Service Comments (SAP order line level Internal Item History
+Text - Z106)" is loaded into the existing "Internal Order Comments from SAP
+(Z106)" column — the same SAP Z106 text under the name it had in the earlier
+"WPH - FILL KILL REPORT" export (see ``SOURCE_RENAMES``). That export's
+``Plant`` column is gone from v3; it stays in the table, blank for v3 rows.
+
+Three derived columns are appended (see src/medline_keys.py):
 
 - ``PO``     — the leading 10 digits of ``PO #`` ("2600301531-STPO" -> "2600301531")
 - ``POLine`` — ``PO Line`` with leading zeros removed ("000003" -> "3")
@@ -24,13 +33,25 @@ from src import medline_keys
 
 KEY_COLUMNS = ["Sales Order #", "Order Line #"]
 
+# File column name -> table column name, applied right after reading.
+SOURCE_RENAMES = {
+    "Customer Service Comments (SAP order line level Internal Item History Text - Z106)":
+        "Internal Order Comments from SAP (Z106)",
+}
+
+# The v3 layout, in file order, after SOURCE_RENAMES.
 SOURCE_COLUMNS = [
     "Sold-To", "Sold-To Name", "Ship-To", "Ship-To Name", "Ship-To Name 2",
     "Order Date", "Order Time", "PO #", "PO Line", "Sales Order #",
     "Order Line #", "Item", "Item Description", "Item # on PO",
     "Customer Item #", "Mfr. Item #", "Manufacturer Name", "Order Qty", "UM",
-    "Filled Qty", "Plant", "Buyer Name",
+    "Filled Qty", "Buyer Name",
     "Internal Order Comments from SAP (Z106)",
+    "Product Allocation Qty", "Open Product Allocation Qty", "PA Fulfill Flag",
+    "Possible Subst. Item", "Customer Preferred Substitute Item",
+    "DED Qty", "DED Valid From Date", "Forecast Qty", "30 Day Delivered Qty",
+    "Est Avail Date", "ReasonTypeText", "MBO Type Description",
+    "Allocation Period Type", "Allocation Level", "DED UOM Code",
 ]
 DERIVED_COLUMNS = ["PO", "POLine", "ShipTo"]
 SOURCE_FILE_COLUMN = "source file"
@@ -38,13 +59,19 @@ SOURCE_FILE_COLUMN = "source file"
 # Column order shared by the staging and target tables (see persistence.py).
 LOAD_COLUMNS = SOURCE_COLUMNS + DERIVED_COLUMNS + [SOURCE_FILE_COLUMN]
 
-INT_COLUMNS = ["Order Qty", "Filled Qty"]
+DATE_COLUMNS = ["Order Date", "DED Valid From Date", "Est Avail Date"]
+INT_COLUMNS = [
+    "Order Qty", "Filled Qty", "Product Allocation Qty",
+    "Open Product Allocation Qty", "DED Qty", "30 Day Delivered Qty",
+]
+DECIMAL_COLUMNS = ["Forecast Qty"]   # 3 decimals in the source
 
 
 def read_fillkill_file(file_path):
     """Read one export: strip names/values, validate, trim the footer, tag the file."""
     df = pd.read_excel(file_path, engine="calamine", dtype=str)
     df.columns = [str(col).strip() for col in df.columns]
+    df = df.rename(columns=SOURCE_RENAMES)
     validate_columns(df, SOURCE_COLUMNS)
     df = df[SOURCE_COLUMNS].copy()
     for col in SOURCE_COLUMNS:
@@ -86,15 +113,18 @@ def add_derived_columns(df):
 
 
 def coerce_types(df):
-    """Order Date -> date, Order Time -> time, quantities -> int.
+    """Dates -> date, Order Time -> time, quantities -> int, Forecast Qty -> decimal.
 
     Parsing is strict so an unexpected format fails the run (and triggers the
     failure email) rather than silently loading blanks.
     """
-    df["Order Date"] = pd.to_datetime(df["Order Date"], format="mixed").dt.date
+    for col in DATE_COLUMNS:
+        df[col] = pd.to_datetime(df[col], format="mixed").dt.date
     df["Order Time"] = pd.to_datetime(df["Order Time"], format="mixed").dt.time
     for col in INT_COLUMNS:
         df[col] = pd.to_numeric(df[col]).round().astype("Int64")
+    for col in DECIMAL_COLUMNS:
+        df[col] = pd.to_numeric(df[col]).round(3)
     return df
 
 

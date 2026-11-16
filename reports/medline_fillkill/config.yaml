@@ -9,16 +9,16 @@ email:
   aad_endpoint: "https://login.microsoftonline.com"
   graph_endpoint: "https://graph.microsoft.com"
   from_email: "procurementdatateam@montefiore.org"
-  # TODO confirm once the hourly mail starts arriving — no Fill-Kill mail was
-  # in this Inbox when the report was set up (2026-10-06). The keyword is matched
-  # case-insensitively against the subject; the prefix against the file name
-  # ("WPH - FILL KILL REPORT-2026-09-20-01-02-06.xlsx").
+  # First mail 2026-11-16: subject "Insight Report : MHS - FILL KILL REPORT",
+  # attachment "MHS - FILL KILL REPORT-2026-11-16-02-58-15.xlsx". The keyword is
+  # matched case-insensitively against the subject; the prefix against the file
+  # name. (The 2026-09 "WPH - FILL KILL REPORT" files were a test export.)
   keyword: "FILL KILL"
   # Only mail whose From address is this account is considered (case-insensitive).
   expected_sender: "insight@medline.com"
   destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Raw'
   max_messages: 100
-  attachment_prefix: "WPH - FILL KILL REPORT"
+  attachment_prefix: "MHS - FILL KILL REPORT"
   attachment_extensions: [".xlsx"]
   inbox_lookback_days: 1
   # Hourly feed: if the newest mail is older than this, the run still loads it
@@ -27,7 +27,7 @@ email:
   max_mail_age_minutes: 90
 
 report:
-  version: "1.1"
+  version: "1.2"
   # --------------------  v1.0 - 2026-10-06 --------------------
   # - initial load: 11 daily exports (2026-09-20 .. 2026-09-30) stitched and
   #   upserted via reports/medline_fillkill/backfill.py
@@ -48,6 +48,16 @@ report:
   #   (maintenance.archive_by_month) instead of one flat folder
   # - a run whose newest mail is over 90 min old (email.max_mail_age_minutes)
   #   still loads it but logs SUCCESS with a "no new file" warning
+  # ---------------------------------------------------------------------
+  # --------------------  new in v1.2 - 2026-11-16 --------------------
+  # - production feed is "MHS - FILL KILL REPORT" (LUM Fill-Kill Report v3);
+  #   attachment_prefix / output_glob switched from "WPH - FILL KILL REPORT"
+  # - v3 layout: 15 new columns (Product Allocation Qty .. DED UOM Code)
+  #   appended to both tables by ensure_tables; the 291 WPH rows stay, NULL there
+  # - "Customer Service Comments (SAP order line level Internal Item History
+  #   Text - Z106)" loads into the existing "Internal Order Comments from SAP
+  #   (Z106)" column (same SAP text, renamed in v3)
+  # - Plant is not in v3: no longer loaded, left in the tables (NULL for MHS)
   # ---------------------------------------------------------------------
   # No Excel output. output_dir/output_glob are used only by the monthly
   # maintenance step, to archive downloaded raw files older than this month.
@@ -79,7 +89,7 @@ logging:
 maintenance:
   cleanup_day_range: [3, 10]
   output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Archived'
-  output_glob: "WPH - FILL KILL REPORT*.xlsx"
+  output_glob: "MHS - FILL KILL REPORT*.xlsx"
   # Archived\<yyyy>\<mm>, by the date in the file name (an hourly feed fills a
   # flat folder fast). Files keep their name; nothing in Archived is purged.
   archive_by_month: true
