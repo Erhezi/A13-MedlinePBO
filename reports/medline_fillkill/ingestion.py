@@ -28,11 +28,15 @@ If the layout changes, the outcome depends on the kind of change:
   persistence.COLUMN_TYPES; ensure_tables then adds it to the tables);
 - columns in a new order, or headers with extra spaces -> no effect.
 
-Three derived columns are appended (see src/medline_keys.py):
+``Order Line #`` is loaded without its leading zeros ("000010" -> "10", still
+text), as in the Order Timing feed (since v1.3).
+
+Four derived columns are appended (see src/medline_keys.py):
 
 - ``PO``     — the leading 10 digits of ``PO #`` ("2600301531-STPO" -> "2600301531")
 - ``POLine`` — ``PO Line`` with leading zeros removed ("000003" -> "3")
 - ``ShipTo`` — ``Ship-To`` with leading zeros removed ("0002464430" -> "2464430")
+- ``SoldTo`` — ``Sold-To`` with leading zeros removed ("0002159659" -> "2159659")
 """
 
 import os
@@ -63,7 +67,7 @@ SOURCE_COLUMNS = [
     "Est Avail Date", "ReasonTypeText", "MBO Type Description",
     "Allocation Period Type", "Allocation Level", "DED UOM Code",
 ]
-DERIVED_COLUMNS = ["PO", "POLine", "ShipTo"]
+DERIVED_COLUMNS = ["PO", "POLine", "ShipTo", "SoldTo"]
 SOURCE_FILE_COLUMN = "source file"
 
 # Column order shared by the staging and target tables (see persistence.py).
@@ -150,9 +154,10 @@ def remove_footer(df):
 
 
 def add_derived_columns(df):
-    """Append PO and POLine (from 'PO #' / 'PO Line') and ShipTo (from 'Ship-To')."""
+    """Append PO and POLine (from 'PO #' / 'PO Line'), ShipTo and SoldTo."""
     df = medline_keys.add_po_columns(df, "PO #", "PO Line")
-    return medline_keys.add_ship_to_column(df, "Ship-To")
+    df = medline_keys.add_ship_to_column(df, "Ship-To")
+    return medline_keys.add_sold_to_column(df, "Sold-To")
 
 
 def coerce_types(df):
@@ -202,6 +207,7 @@ def prepare(file_path):
     Returns (rows, warnings) — see ``read_fillkill_file``.
     """
     df, warnings = read_fillkill_file(file_path)
+    df = medline_keys.strip_order_line(df, "Order Line #")
     validate_keys(df, os.path.basename(file_path))
     df = add_derived_columns(df)
     df = coerce_types(df)

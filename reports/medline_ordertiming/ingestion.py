@@ -26,12 +26,15 @@ disagrees with the rows read (a truncated attachment). The other totals are
 compared too, but a mismatch there is only a warning.
 
 Source column names are kept as-is (whitespace-stripped, so typos such as
-"EDI Date Re" and the double space in "Mins  to Order Create" stay). Derived
-columns (see src/medline_keys.py), then Report Date and source file, follow:
+"EDI Date Re" and the double space in "Mins  to Order Create" stay).
+``Order Line`` is loaded without its leading zeros ("000010" -> "10", still
+text), as in the Fill-Kill feed (since v1.1). Derived columns (see
+src/medline_keys.py), then Report Date and source file, follow:
 
 - ``PO``     — the leading 10 digits of ``PO#`` ("3000571298-STPO" -> "3000571298")
 - ``POLine`` — ``PO Line #`` with leading zeros removed ("000001" -> "1")
 - ``ShipTo`` — ``Ship-To #`` with leading zeros removed ("0002522416" -> "2522416")
+- ``SoldTo`` — ``Sold-To #`` with leading zeros removed ("0002159659" -> "2159659")
 """
 
 import os
@@ -56,7 +59,7 @@ SOURCE_COLUMNS = [
     "SAP Delv Doc Create Time", "ASN Creation Date", "ASN Creation Time",
     "Branch", "Order Line", "Lot", "Expiration", "PO Type", "SCAC", "SortCode",
 ]
-DERIVED_COLUMNS = ["PO", "POLine", "ShipTo"]
+DERIVED_COLUMNS = ["PO", "POLine", "ShipTo", "SoldTo"]
 REPORT_DATE_COLUMN = "Report Date"
 SOURCE_FILE_COLUMN = "source file"
 
@@ -214,9 +217,10 @@ def validate_keys(df, source_name):
 
 
 def add_derived_columns(df):
-    """Append PO and POLine (from 'PO#' / 'PO Line #') and ShipTo (from 'Ship-To #')."""
+    """Append PO and POLine (from 'PO#' / 'PO Line #'), ShipTo and SoldTo."""
     df = medline_keys.add_po_columns(df, "PO#", "PO Line #")
-    return medline_keys.add_ship_to_column(df, "Ship-To #")
+    df = medline_keys.add_ship_to_column(df, "Ship-To #")
+    return medline_keys.add_sold_to_column(df, "Sold-To #")
 
 
 def coerce_types(df):
@@ -245,6 +249,7 @@ def prepare(file_path):
     report_date = parse_report_date(footer, source_name)
     print(f"Read {len(df)} order line(s) from {source_name} (Report Date {report_date}).")
     warnings = check_totals(df, parse_totals(totals), source_name)
+    df = medline_keys.strip_order_line(df, "Order Line")
     validate_keys(df, source_name)
     df = add_derived_columns(df)
     df = coerce_types(df)

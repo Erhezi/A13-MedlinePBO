@@ -29,7 +29,7 @@ email:
   max_mail_age_minutes: 90
 
 report:
-  version: "1.0"
+  version: "1.1"
   # --------------------  v1.0 - 2026-11-16 --------------------
   # - one row per order line; source column names kept as-is (stripped,
   #   typos included); added PO (leading 10 digits of "PO#"), POLine
@@ -47,6 +47,14 @@ report:
   #   Archived\<yyyy>\<mm> (maintenance.archive_by_month)
   # - a run whose newest mail is over 90 min old (email.max_mail_age_minutes)
   #   still loads it but logs SUCCESS with a "no new file" warning
+  # ---------------------------------------------------------------------
+  # --------------------  new in v1.1 - 2026-11-17 --------------------
+  # - added SoldTo ("Sold-To #" without leading zeros, VARCHAR(20)), as in
+  #   Fill-Kill; appended to both tables by ensure_tables
+  # - "Order Line" is loaded without leading zeros ("000010" -> "10", still
+  #   VARCHAR), so it matches Fill-Kill's "Order Line #"
+  # - the 2623 rows already loaded (Report Date 2026-11-17) were fixed once
+  #   by SQL: Order Line stripped, SoldTo filled (load stamp untouched)
   # ---------------------------------------------------------------------
   # No Excel output. output_dir is used only by the monthly maintenance step,
   # to archive downloaded raw files older than this month.

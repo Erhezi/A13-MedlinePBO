@@ -12,13 +12,14 @@ from src import staged_upsert
 from reports.medline_fillkill.ingestion import KEY_COLUMNS, LOAD_COLUMNS
 
 # Column -> SQL type, in LOAD_COLUMNS order. Identifiers keep their leading
-# zeros (VARCHAR); PO is the 10-digit PO number, and POLine / ShipTo the PO line
-# / ship-to number without leading zeros (still VARCHAR; POLine is VARCHAR(5)
+# zeros (VARCHAR), except Order Line #, stored without them since v1.3; PO is
+# the 10-digit PO number, and POLine / ShipTo / SoldTo the PO line / ship-to /
+# sold-to number without leading zeros (still VARCHAR; POLine is VARCHAR(5)
 # like the PO line in PLMPreprocessorShared). In v1.1 ShipTo was appended to the
 # existing tables by ensure_tables and POLine altered from INT by hand. In v1.2
 # ensure_tables appended the 15 MHS v3 columns (Product Allocation Qty ..
 # DED UOM Code). Plant, from the earlier WPH export, is no longer loaded but
-# stays in the existing tables.
+# stays in the existing tables. In v1.3 ensure_tables appended SoldTo.
 COLUMN_TYPES = {
     "Sold-To": "VARCHAR(20)",
     "Sold-To Name": "VARCHAR(100)",
@@ -60,6 +61,7 @@ COLUMN_TYPES = {
     "PO": "VARCHAR(10)",
     "POLine": "VARCHAR(5)",
     "ShipTo": "VARCHAR(20)",
+    "SoldTo": "VARCHAR(20)",
     "source file": "VARCHAR(260)",
 }
 assert list(COLUMN_TYPES) == LOAD_COLUMNS, "COLUMN_TYPES must follow LOAD_COLUMNS"

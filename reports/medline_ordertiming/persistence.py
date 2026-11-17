@@ -21,9 +21,11 @@ from src import staged_upsert
 from reports.medline_ordertiming.ingestion import KEY_COLUMNS, LOAD_COLUMNS, REPORT_DATE_COLUMN
 
 # Column -> SQL type, in LOAD_COLUMNS order. Identifiers keep their leading
-# zeros (VARCHAR); PO is the 10-digit PO number, and POLine / ShipTo the PO line
-# / ship-to number without leading zeros (still VARCHAR; POLine is VARCHAR(5)
-# like the PO line in PLMPreprocessorShared).
+# zeros (VARCHAR), except Order Line, stored without them since v1.1; PO is the
+# 10-digit PO number, and POLine / ShipTo / SoldTo the PO line / ship-to /
+# sold-to number without leading zeros (still VARCHAR; POLine is VARCHAR(5)
+# like the PO line in PLMPreprocessorShared). SoldTo was appended to the
+# existing tables by ensure_tables in v1.1.
 COLUMN_TYPES = {
     "Order Create Date": "DATE",
     "Sold-To #": "VARCHAR(20)",
@@ -71,6 +73,7 @@ COLUMN_TYPES = {
     "PO": "VARCHAR(10)",
     "POLine": "VARCHAR(5)",
     "ShipTo": "VARCHAR(20)",
+    "SoldTo": "VARCHAR(20)",
     "Report Date": "DATE",
     "source file": "VARCHAR(260)",
 }

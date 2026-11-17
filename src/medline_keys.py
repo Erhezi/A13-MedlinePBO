@@ -8,9 +8,15 @@ Medline's exports carry our PO and ship-to numbers in their own shape:
                the format of POLine in PLMPreprocessorShared's PO tables
 - ``ShipTo`` — the ship-to number without leading zeros, kept as text
                ("0002464430" -> "2464430"); an all-zero value keeps one "0"
+- ``SoldTo`` — the sold-to number without leading zeros, by the same rule
+               ("0002159659" -> "2159659")
 
-Values that do not fit are left blank and counted in a WARNING line in the log
-rather than failing the run.
+The order line itself (part of each feed's key) is also stored without its
+leading zeros, still as text ("000010" -> "10"), so the feeds agree on it
+whichever way Medline pads it (see ``strip_order_line``).
+
+Values that do not fit PO / POLine are left blank and counted in a WARNING line
+in the log rather than failing the run.
 """
 
 
@@ -38,6 +44,22 @@ def add_po_columns(df, po_column, po_line_column):
 def add_ship_to_column(df, ship_to_column):
     """Append ShipTo: *ship_to_column* with its leading zeros removed."""
     df["ShipTo"] = _strip_leading_zeros(df[ship_to_column])
+    return df
+
+
+def add_sold_to_column(df, sold_to_column):
+    """Append SoldTo: *sold_to_column* with its leading zeros removed."""
+    df["SoldTo"] = _strip_leading_zeros(df[sold_to_column])
+    return df
+
+
+def strip_order_line(df, order_line_column):
+    """Remove the leading zeros of *order_line_column* in place ("000010" -> "10").
+
+    Call it before the key check, so two lines that differ only in padding
+    fail that check instead of the table's primary key.
+    """
+    df[order_line_column] = _strip_leading_zeros(df[order_line_column])
     return df
 
 
