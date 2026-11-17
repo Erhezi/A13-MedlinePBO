@@ -7,9 +7,9 @@ loaded. The hourly feed started on 2026-11-17: mails at 07:23, 08:15, 09:37 and
 day-to-date snapshot (518 -> 1083 -> 1406 -> 1552 lines). The four files are in
 `OrderTiming\Raw`, and the 10:11 one is loaded (Report Date 2026-11-17, 1552
 lines). **Scheduled** as Task Scheduler "Medline Order Timing Hourly" (`--prd`,
-every day hourly at :28, 6:28 AM–11:28 PM, 2 min before Fill-Kill;
-`setup_task_scheduler.ps1` sets it up on a server). How it works for operators
-is in the README. This file keeps the background and the open questions.
+every day hourly at :28, 6:28 AM–11:28 PM, 2 min before Fill-Kill), set up on
+the server by `setup_task_scheduler.ps1`. The development PC runs it 7 minutes
+later, at :35 (Fill-Kill at :37). How it works for operators is in the README. This file keeps the background and the open questions.
 
 ---
 
@@ -76,4 +76,4 @@ run.
 - [x] Package, config v1.0, `main.py` entry, `run_medline_ordertiming.bat` (tracked since 2026-11-17)
 - [x] Backfill of the 2026-11-10..12 test files; pipeline step run against the 11-12 mail
 - [x] `--test` run through `main.py` once a same-day file is in the Inbox (2026-11-17 10:17, via `run_medline_ordertiming.bat --test`, which now falls back to `.venv\` like the Fill-Kill launcher)
-- [x] Task Scheduler "Medline Order Timing Hourly": `--prd`, every day hourly at :28, 6:28 AM–11:28 PM (registered 2026-11-17; revisit the hours once Q1 is answered)
+- [x] Task Scheduler "Medline Order Timing Hourly": `--prd`, every day hourly at :28, 6:28 AM–11:28 PM on the server (`setup_task_scheduler.ps1`), :35 on the development PC (registered 2026-11-17; revisit the hours once Q1 is answered)

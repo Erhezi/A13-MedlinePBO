@@ -26,6 +26,13 @@
 .PARAMETER Report
     Which tasks to set up: autosub, ordertiming, fillkill. Default: all three.
 
+.PARAMETER Start
+    Other start times, as report=HH:mm (24-hour, local time); each run then
+    comes every hour (Autosub every 4 hours) from that time until the usual
+    end (11:59 PM, Autosub 5:00 PM). For a second machine that also runs
+    these loads, so its runs never meet the server's on the staging tables:
+    -Start ordertiming=06:35,fillkill=06:37
+
 .PARAMETER Mode
     prd (default) or test. test sends every email to the config's test_recipients.
 
@@ -46,6 +53,10 @@
     powershell -ExecutionPolicy Bypass -File .\setup_task_scheduler.ps1 -Report ordertiming,fillkill
 
 .EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\setup_task_scheduler.ps1 -Report ordertiming,fillkill -Start ordertiming=06:35,fillkill=06:37 -LoggedOnOnly
+    The development PC: 7 minutes after the server, only while logged on.
+
+.EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\setup_task_scheduler.ps1 -WhatIf
     Shows what would be set up, without changing anything.
 
@@ -54,8 +65,11 @@
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('autosub', 'ordertiming', 'fillkill')]
+    # Checked below, not with ValidateSet: "powershell -File" passes
+    # "ordertiming,fillkill" as one string, which is split on commas here.
     [string[]] $Report = @('autosub', 'ordertiming', 'fillkill'),
+
+    [string[]] $Start = @(),
 
     [ValidateSet('prd', 'test')]
     [string] $Mode = 'prd',
@@ -71,41 +85,79 @@ $ErrorActionPreference = 'Stop'
 $ProjectDir = $PSScriptRoot
 
 # ---- Task definitions ------------------------------------------------------
-# Start is local time. The trigger carries no UTC offset, so the runs keep
-# their clock time across daylight-saving changes.
-# Duration is how long the hourly repeat lasts after Start; it ends a little
-# after the last run (6:30 AM + 17h29m = 11:59 PM, last run 11:30 PM).
+# Start and End are local time (24-hour). The trigger carries no UTC offset,
+# so the runs keep their clock time across daylight-saving changes. A run
+# comes every IntervalHours from Start for as long as it is before End, so
+# 06:30 to 23:59 hourly gives 6:30 AM .. 11:30 PM. -Start replaces Start.
 $Tasks = [ordered]@{
     autosub     = @{
-        Name        = 'Medline Daily Autosub'
-        Bat         = 'run_medline_autosub.bat'
-        Start       = '07:50'
-        Interval    = 'PT4H'
-        Duration    = 'PT9H10M'
-        WeekdaysOnly = $true
-        Description = 'Medline Daily Autosub Management load (A13-MedlinePBO, --report medline_autosub). Every 4 hours Mon-Fri, 7:50 AM until 5:00 PM (last run 3:50 PM); loads each new Medline export once, otherwise skips.'
+        Name          = 'Medline Daily Autosub'
+        Bat           = 'run_medline_autosub.bat'
+        Start         = '07:50'
+        End           = '17:00'
+        IntervalHours = 4
+        WeekdaysOnly  = $true
+        Summary       = 'Medline Daily Autosub Management load (A13-MedlinePBO, --report medline_autosub)'
+        Detail        = 'loads each new Medline export once, otherwise skips.'
     }
     ordertiming = @{
-        Name        = 'Medline Order Timing Hourly'
-        Bat         = 'run_medline_ordertiming.bat'
-        Start       = '06:28'
-        Interval    = 'PT1H'
-        Duration    = 'PT17H31M'
-        WeekdaysOnly = $false
-        Description = 'Medline Order Timing hourly load (A13-MedlinePBO, --report medline_ordertiming). Every day, hourly at :28 from 6:28 AM until 11:59 PM (last run 11:28 PM), 2 min before Fill-Kill; replaces the newest MHS - ORDER DETAIL REPORT mail''s Report Date in MedlineOrderTiming.MedlineOrderTiming.'
+        Name          = 'Medline Order Timing Hourly'
+        Bat           = 'run_medline_ordertiming.bat'
+        Start         = '06:28'
+        End           = '23:59'
+        IntervalHours = 1
+        WeekdaysOnly  = $false
+        Summary       = 'Medline Order Timing hourly load (A13-MedlinePBO, --report medline_ordertiming)'
+        Detail        = 'replaces the newest MHS - ORDER DETAIL REPORT mail''s Report Date in MedlineOrderTiming.MedlineOrderTiming.'
     }
     fillkill    = @{
-        Name        = 'Medline Fill-Kill Hourly'
-        Bat         = 'run_medline_fillkill.bat'
-        Start       = '06:30'
-        Interval    = 'PT1H'
-        Duration    = 'PT17H29M'
-        WeekdaysOnly = $false
-        Description = 'Medline Fill-Kill hourly load (A13-MedlinePBO, --report medline_fillkill). Every day, hourly at :30 from 6:30 AM until 11:59 PM (last run 11:30 PM); upserts the newest MHS - FILL KILL REPORT mail into MedlineFillKill.MedlineFillKill.'
+        Name          = 'Medline Fill-Kill Hourly'
+        Bat           = 'run_medline_fillkill.bat'
+        Start         = '06:30'
+        End           = '23:59'
+        IntervalHours = 1
+        WeekdaysOnly  = $false
+        Summary       = 'Medline Fill-Kill hourly load (A13-MedlinePBO, --report medline_fillkill)'
+        Detail        = 'upserts the newest MHS - FILL KILL REPORT mail into MedlineFillKill.MedlineFillKill.'
     }
 }
 
-function Escape-Xml([string] $text) {
+# ---- Arguments ---------------------------------------------------------------
+$Report = @($Report | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+foreach ($key in $Report) {
+    if (-not $Tasks.Contains($key)) {
+        throw "Unknown report '$key'. Use one or more of: $($Tasks.Keys -join ', ')."
+    }
+}
+foreach ($entry in @($Start | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+    if ($entry -notmatch '^(\w+)=([01]?\d|2[0-3]):([0-5]\d)$') {
+        throw "-Start '$entry' is not report=HH:mm (24-hour), e.g. ordertiming=06:35."
+    }
+    $key = $Matches[1]
+    if (-not $Tasks.Contains($key)) {
+        throw "-Start '$entry': unknown report '$key'. Use one of: $($Tasks.Keys -join ', ')."
+    }
+    $Tasks[$key].Start = '{0:D2}:{1}' -f [int]$Matches[2], $Matches[3]
+}
+foreach ($key in $Tasks.Keys) {
+    $task = $Tasks[$key]
+    $window = [TimeSpan]::Parse($task.End) - [TimeSpan]::Parse($task.Start)
+    if ($window -le [TimeSpan]::Zero) {
+        throw "$($task.Name): start $($task.Start) is not before the end of its day ($($task.End))."
+    }
+    $interval = [TimeSpan]::FromHours($task.IntervalHours)
+    $lastRun = [TimeSpan]::Parse($task.Start) +
+        [TimeSpan]::FromTicks([Math]::Floor(($window.Ticks - 1) / $interval.Ticks) * $interval.Ticks)
+    $task.Duration = 'PT{0}H{1}M' -f [int][Math]::Floor($window.TotalHours), $window.Minutes
+    $days = if ($task.WeekdaysOnly) { 'Mon-Fri' } else { 'Every day' }
+    $every = if ($task.IntervalHours -eq 1) { 'hourly' } else { "every $($task.IntervalHours) hours" }
+    $clock = { param($t) ([DateTime]::Today + $t).ToString('h:mm tt') }
+    $task.Description = '{0}. {1}, {2} from {3} until {4} (last run {5}); {6}' -f $task.Summary, $days,
+        $every, (& $clock ([TimeSpan]::Parse($task.Start))), (& $clock ([TimeSpan]::Parse($task.End))),
+        (& $clock $lastRun), $task.Detail
+}
+
+function ConvertTo-XmlText([string] $text) {
     return [System.Security.SecurityElement]::Escape($text)
 }
 
@@ -130,11 +182,11 @@ function New-TaskXml($task, [string] $userId, [string] $logonType) {
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>$(Escape-Xml $task.Description)</Description>
+    <Description>$(ConvertTo-XmlText $task.Description)</Description>
   </RegistrationInfo>
   <Principals>
     <Principal id="Author">
-      <UserId>$(Escape-Xml $userId)</UserId>
+      <UserId>$(ConvertTo-XmlText $userId)</UserId>
       <LogonType>$logonType</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
@@ -152,16 +204,16 @@ function New-TaskXml($task, [string] $userId, [string] $logonType) {
       <StartBoundary>$startBoundary</StartBoundary>
       <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>
       <Repetition>
-        <Interval>$($task.Interval)</Interval>
+        <Interval>PT$($task.IntervalHours)H</Interval>
         <Duration>$($task.Duration)</Duration>
       </Repetition>
 $schedule    </CalendarTrigger>
   </Triggers>
   <Actions Context="Author">
     <Exec>
-      <Command>"$(Escape-Xml $bat)"</Command>
+      <Command>"$(ConvertTo-XmlText $bat)"</Command>
       <Arguments>--$Mode</Arguments>
-      <WorkingDirectory>$(Escape-Xml $ProjectDir)</WorkingDirectory>
+      <WorkingDirectory>$(ConvertTo-XmlText $ProjectDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>

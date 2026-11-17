@@ -252,7 +252,8 @@ Start-ScheduledTask -TaskName "Medline Order Timing Hourly"                   # 
 - It asks for the account's password and sets each task to run whether the user is logged on or not. The password is needed because the runs read the network share and SQL Server as that user. Add `-LoggedOnOnly` to skip the password; the tasks then run only while that user is logged on.
 - Each task runs `run_medline_<report>.bat --prd` from the folder the script is in. The launchers use `venv\Scripts\python.exe` and fall back to `.venv\`.
 - A task with the same name is replaced, so the script can be run again after a schedule change. `-Remove` deletes the selected tasks.
-- Run each task on one machine only. Disable the copy on any other machine once the server's tasks run.
+- Start times are local clock times and stay put across daylight-saving changes. `-Start report=HH:mm` moves a task's start; it then repeats hourly (Autosub every 4 hours) until the usual end, 11:59 PM (Autosub 5:00 PM).
+- If a second machine also runs these loads, give it other minutes so the two never use the same staging table at once. The development PC runs Order Timing and Fill-Kill 7 minutes after the server: `-Report ordertiming,fillkill -Start ordertiming=06:35,fillkill=06:37 -LoggedOnOnly`.
 
 ### Step 1: Confirm manual run works first
 
