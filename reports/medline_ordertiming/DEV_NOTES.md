@@ -1,10 +1,15 @@
 # Medline Order Timing — development notes
 
-**Status (2026-11-16): built, v1.0.** Wired into `main.py` as
+**Status (2026-11-17): built, v1.0; hourly feed live.** Wired into `main.py` as
 `--report medline_ordertiming`. The three daily test files (2026-11-10..12) are
-loaded. **Not scheduled yet.** Medline sends one test file a day until LUM
-go-live, then hourly. How it works for operators is in the README. This file
-keeps the background and the open questions.
+loaded. The hourly feed started on 2026-11-17: mails at 07:23, 08:15, 09:37 and
+10:11 ET (stamps `06-21-02` .. `09-08-27`, i.e. Central time), each a
+day-to-date snapshot (518 -> 1083 -> 1406 -> 1552 lines). The four files are in
+`OrderTiming\Raw`, and the 10:11 one is loaded (Report Date 2026-11-17, 1552
+lines). **Scheduled** as Task Scheduler "Medline Order Timing Hourly" (`--prd`,
+every day hourly at :28, 6:28 AM–11:28 PM, 2 min before Fill-Kill;
+`setup_task_scheduler.ps1` sets it up on a server). How it works for operators
+is in the README. This file keeps the background and the open questions.
 
 ---
 
@@ -68,7 +73,7 @@ run.
 
 ## 4. Go-live checklist
 
-- [x] Package, config v1.0, `main.py` entry, `run_medline_ordertiming.bat` (gitignored)
+- [x] Package, config v1.0, `main.py` entry, `run_medline_ordertiming.bat` (tracked since 2026-11-17)
 - [x] Backfill of the 2026-11-10..12 test files; pipeline step run against the 11-12 mail
-- [ ] `--test` run through `main.py` once a same-day file is in the Inbox
-- [ ] Task Scheduler: hourly, `--prd`, hours per Q1
+- [x] `--test` run through `main.py` once a same-day file is in the Inbox (2026-11-17 10:17, via `run_medline_ordertiming.bat --test`, which now falls back to `.venv\` like the Fill-Kill launcher)
+- [x] Task Scheduler "Medline Order Timing Hourly": `--prd`, every day hourly at :28, 6:28 AM–11:28 PM (registered 2026-11-17; revisit the hours once Q1 is answered)

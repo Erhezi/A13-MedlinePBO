@@ -18,7 +18,7 @@ This repo runs **five** pipelines that share common infrastructure:
 - **Medline Allocation** — run `python main.py --report medline_allocation`, config `reports/medline_allocation/config.yaml`, launcher `run_medline_allocation.bat` (scheduled Mon–Fri).
 - **Medline Fill-Kill** — run `python main.py --report medline_fillkill`, config `reports/medline_fillkill/config.yaml`, launcher `run_medline_fillkill.bat` (Task Scheduler "Medline Fill-Kill Hourly", `--prd`: every day hourly at :30, 6:30 AM–11:30 PM). A data load only, with no Excel output; see below.
 - **Medline Daily Autosub** — run `python main.py --report medline_autosub`, config `reports/medline_autosub/config.yaml`, launcher `run_medline_autosub.bat` (scheduled every 4 hours on weekdays, 7:50 AM–5 PM, i.e. 7:50 AM, 11:50 AM and 3:50 PM; loads each new export once). A data load only, with no Excel output; see below.
-- **Medline Order Timing** — run `python main.py --report medline_ordertiming`, config `reports/medline_ordertiming/config.yaml`, launcher `run_medline_ordertiming.bat` (to be scheduled hourly from LUM go-live; one test file a day until then). A data load only, with no Excel output; see below.
+- **Medline Order Timing** — run `python main.py --report medline_ordertiming`, config `reports/medline_ordertiming/config.yaml`, launcher `run_medline_ordertiming.bat` (Task Scheduler "Medline Order Timing Hourly", `--prd`: every day hourly at :28, 6:28 AM–11:28 PM, 2 min before Fill-Kill). A data load only, with no Excel output; see below.
 
 All of them run through the single entry point `main.py`, selected with `--report`. Add `--config <path>` only to override a report's default config.
 
@@ -236,6 +236,23 @@ Use Task Scheduler if you want Windows to run the pipeline automatically.
 Important rule:
 
 The scheduled task must run under the same Windows user account that completed `python first_time_setup.py`, or it must have the same `PBO_SECRET_PASSPHRASE` environment variable configured for the account that runs the task.
+
+### Quick setup with the script (Autosub, Order Timing, Fill-Kill)
+
+`setup_task_scheduler.ps1` in the project folder creates the three data-load tasks with the schedules listed at the top of this README. It does not touch PBO or Allocation, which are set up by hand as described in the steps below. Run it in PowerShell, from the project folder, as the account that ran `first_time_setup.py`. Opening PowerShell as administrator avoids permission errors when it stores the password.
+
+```powershell
+cd "your_path_to_this_folder\A13-MedlinePBO"
+powershell -ExecutionPolicy Bypass -File .\setup_task_scheduler.ps1 -WhatIf   # show what it would do
+powershell -ExecutionPolicy Bypass -File .\setup_task_scheduler.ps1           # create all three
+powershell -ExecutionPolicy Bypass -File .\setup_task_scheduler.ps1 -Report ordertiming,fillkill
+Start-ScheduledTask -TaskName "Medline Order Timing Hourly"                   # try one now
+```
+
+- It asks for the account's password and sets each task to run whether the user is logged on or not. The password is needed because the runs read the network share and SQL Server as that user. Add `-LoggedOnOnly` to skip the password; the tasks then run only while that user is logged on.
+- Each task runs `run_medline_<report>.bat --prd` from the folder the script is in. The launchers use `venv\Scripts\python.exe` and fall back to `.venv\`.
+- A task with the same name is replaced, so the script can be run again after a schedule change. `-Remove` deletes the selected tasks.
+- Run each task on one machine only. Disable the copy on any other machine once the server's tasks run.
 
 ### Step 1: Confirm manual run works first
 

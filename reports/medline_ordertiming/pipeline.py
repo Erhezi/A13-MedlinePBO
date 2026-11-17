@@ -7,9 +7,9 @@ Within a day each file holds the day's lines so far, so the latest file wins;
 the first file of a new day starts a new Report Date. Re-loading the same file
 on a later run is harmless.
 
-Until LUM go-live Medline sends one test file a day; afterwards it is expected
-hourly, like Fill-Kill. No report is produced; the returned path is the
-downloaded raw file. The shared runner (src/runner.py) provides logging,
+Medline has sent the file hourly since 2026-11-17 (one test file a day
+before that); the run is scheduled hourly at :28. No report is produced; the
+returned path is the downloaded raw file. The shared runner (src/runner.py) provides logging,
 notification, ETL-health, and maintenance.
 
 For files already on disk use ``python -m reports.medline_ordertiming.backfill``.

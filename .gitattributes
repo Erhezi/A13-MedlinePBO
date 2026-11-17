@@ -1,0 +1,4 @@
+# Windows launchers and setup scripts: always check out with CRLF, whatever
+# the machine's core.autocrlf (cmd.exe misreads labels in LF batch files).
+*.bat text eol=crlf
+*.ps1 text eol=crlf

@@ -4,8 +4,8 @@
 #   [MedlineOrderTiming].[medlineordertiming_stg] -> its Report Date replaced
 #   in [MedlineOrderTiming].[MedlineOrderTiming], keyed on
 #   (Report Date, Order #, Order Line).
-#   Until LUM go-live Medline sends one test file a day (~1-2 PM ET);
-#   afterwards hourly, like Fill-Kill.
+#   Hourly feed since 2026-11-17 (one test file a day before that).
+#   Scheduled every day hourly at :28, 06:28–23:28 (2 min before Fill-Kill).
 # ──────────────────────────────────────────────
 
 email:
