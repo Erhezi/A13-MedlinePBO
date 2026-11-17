@@ -18,6 +18,16 @@ Text - Z106)" is loaded into the existing "Internal Order Comments from SAP
 "WPH - FILL KILL REPORT" export (see ``SOURCE_RENAMES``). That export's
 ``Plant`` column is gone from v3; it stays in the table, blank for v3 rows.
 
+If the layout changes, the outcome depends on the kind of change:
+
+- an expected column is missing (or renamed) -> the run fails before anything
+  is written, and the error lists the missing and the unexpected columns;
+- an extra column appears -> the run still loads the expected columns, and a
+  "Warning: ... not loaded" goes to the log and to the ETL-health Error column
+  of the SUCCESS row. Loading it needs a code change (SOURCE_COLUMNS +
+  persistence.COLUMN_TYPES; ensure_tables then adds it to the tables);
+- columns in a new order, or headers with extra spaces -> no effect.
+
 Three derived columns are appended (see src/medline_keys.py):
 
 - ``PO``     — the leading 10 digits of ``PO #`` ("2600301531-STPO" -> "2600301531")
@@ -68,25 +78,58 @@ DECIMAL_COLUMNS = ["Forecast Qty"]   # 3 decimals in the source
 
 
 def read_fillkill_file(file_path):
-    """Read one export: strip names/values, validate, trim the footer, tag the file."""
+    """Read one export: strip names/values, validate, trim the footer, tag the file.
+
+    Returns (rows, warnings); *warnings* names any column outside the expected
+    layout, which is not loaded.
+    """
+    source_name = os.path.basename(file_path)
     df = pd.read_excel(file_path, engine="calamine", dtype=str)
     df.columns = [str(col).strip() for col in df.columns]
     df = df.rename(columns=SOURCE_RENAMES)
-    validate_columns(df, SOURCE_COLUMNS)
+    extra = unexpected_columns(df)
+    validate_columns(df, SOURCE_COLUMNS, extra)
+    warnings = []
+    if extra:
+        warnings.append(
+            f"Warning: {source_name} has {len(extra)} column(s) outside the expected "
+            f"layout, not loaded: {extra}"
+        )
+        print(warnings[-1])
     df = df[SOURCE_COLUMNS].copy()
     for col in SOURCE_COLUMNS:
         df[col] = df[col].str.strip().replace("", pd.NA)
     df = remove_footer(df)
-    df[SOURCE_FILE_COLUMN] = os.path.basename(file_path)
-    print(f"Read {len(df)} rows from {os.path.basename(file_path)}")
-    return df
+    df[SOURCE_FILE_COLUMN] = source_name
+    print(f"Read {len(df)} rows from {source_name}")
+    return df, warnings
 
 
-def validate_columns(df, required_columns):
-    """Raise ValueError if any *required_columns* are missing from *df*."""
+def unexpected_columns(df):
+    """Columns of *df* outside SOURCE_COLUMNS.
+
+    A blank-header column with no values (pandas names it "Unnamed: <n>") is
+    just empty formatted cells, not a new column, so it is ignored.
+    """
+    return [
+        col for col in df.columns
+        if col not in SOURCE_COLUMNS
+        and not (col.startswith("Unnamed:") and df[col].isna().all())
+    ]
+
+
+def validate_columns(df, required_columns, unexpected=()):
+    """Raise ValueError if any *required_columns* are missing from *df*.
+
+    *unexpected* (the file's columns outside the expected layout) is added to
+    the message, so a renamed column shows up as a missing / unexpected pair.
+    """
     missing = [col for col in required_columns if col not in df.columns]
     if missing:
-        raise ValueError(f"Validation Failed. Missing columns: {missing}")
+        detail = f"Missing columns: {missing}"
+        if unexpected:
+            detail += f"; unexpected columns (renamed?): {list(unexpected)}"
+        raise ValueError(f"Validation Failed. {detail}")
     print("Column validation successful.")
     return True
 
@@ -154,9 +197,12 @@ def validate_keys(df, source_name):
 
 
 def prepare(file_path):
-    """Read, validate and cleanse ONE export into the load shape."""
-    df = read_fillkill_file(file_path)
+    """Read, validate and cleanse ONE export into the load shape.
+
+    Returns (rows, warnings) — see ``read_fillkill_file``.
+    """
+    df, warnings = read_fillkill_file(file_path)
     validate_keys(df, os.path.basename(file_path))
     df = add_derived_columns(df)
     df = coerce_types(df)
-    return df[LOAD_COLUMNS]
+    return df[LOAD_COLUMNS], warnings

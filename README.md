@@ -16,7 +16,7 @@ This repo runs **five** pipelines that share common infrastructure:
 
 - **Medline PBO** — run `python main.py --report medline_pbo`, config `reports/medline_pbo/config.yaml`, launcher `run_medline_pbo.bat` (scheduled Tue/Thu).
 - **Medline Allocation** — run `python main.py --report medline_allocation`, config `reports/medline_allocation/config.yaml`, launcher `run_medline_allocation.bat` (scheduled Mon–Fri).
-- **Medline Fill-Kill** — run `python main.py --report medline_fillkill`, config `reports/medline_fillkill/config.yaml`, launcher `run_medline_fillkill.bat` (scheduled hourly, 7 AM–11 PM). A data load only, with no Excel output; see below.
+- **Medline Fill-Kill** — run `python main.py --report medline_fillkill`, config `reports/medline_fillkill/config.yaml`, launcher `run_medline_fillkill.bat` (Task Scheduler "Medline Fill-Kill Hourly", `--prd`: every day hourly at :30, 6:30 AM–11:30 PM). A data load only, with no Excel output; see below.
 - **Medline Daily Autosub** — run `python main.py --report medline_autosub`, config `reports/medline_autosub/config.yaml`, launcher `run_medline_autosub.bat` (scheduled every 4 hours on weekdays, 7:50 AM–5 PM, i.e. 7:50 AM, 11:50 AM and 3:50 PM; loads each new export once). A data load only, with no Excel output; see below.
 - **Medline Order Timing** — run `python main.py --report medline_ordertiming`, config `reports/medline_ordertiming/config.yaml`, launcher `run_medline_ordertiming.bat` (to be scheduled hourly from LUM go-live; one test file a day until then). A data load only, with no Excel output; see below.
 

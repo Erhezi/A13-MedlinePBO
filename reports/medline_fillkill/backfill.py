@@ -55,7 +55,8 @@ def main(argv=None):
     # yyyy-mm-dd-hh-mm-ss stamp under a fixed prefix, so a name sort is
     # chronological.
     files = sorted(files, key=os.path.basename)
-    prepared = [ingestion.prepare(path) for path in files]
+    # (Column warnings are printed by prepare; there is no ETL-health row here.)
+    prepared = [ingestion.prepare(path)[0] for path in files]
     print(f"Prepared {sum(len(df) for df in prepared)} rows from {len(files)} file(s).")
     if args.dry_run:
         print("Dry run — nothing written to the database.")

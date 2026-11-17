@@ -1,6 +1,6 @@
 # ──────────────────────────────────────────────
 # Medline Fill-Kill Pipeline — Configuration
-#   Hourly (07:00–23:00) incremental load: newest mailed export ->
+#   Hourly (every day at :30, 06:30–23:30) incremental load: newest mailed export ->
 #   [MedlineFillKill].[medlinefillkill_stg] -> upsert into
 #   [MedlineFillKill].[MedlineFillKill] on (Sales Order #, Order Line #).
 # ──────────────────────────────────────────────

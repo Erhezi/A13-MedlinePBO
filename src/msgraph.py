@@ -97,6 +97,11 @@ def _from_address(message):
     return ((message.get("from") or {}).get("emailAddress") or {}).get("address", "")
 
 
+def _received_at(message):
+    """Graph's receivedDateTime ("2026-11-16T21:16:56Z") as an aware UTC datetime."""
+    return datetime.fromisoformat(message["receivedDateTime"].replace("Z", "+00:00"))
+
+
 def _list_messages(
     graph,
     user,
@@ -136,14 +141,12 @@ def _list_messages(
 
     if received_since is not None:
         messages = [
-            message
-            for message in messages
-            if datetime.fromisoformat(
-                message["receivedDateTime"].replace("Z", "+00:00")
-            ) >= received_since
+            message for message in messages if _received_at(message) >= received_since
         ]
 
-    messages.sort(key=lambda message: message["receivedDateTime"], reverse=True)
+    # Newest first: the caller loads the first message with a matching
+    # attachment, so this order is what makes "the latest mail wins".
+    messages.sort(key=_received_at, reverse=True)
     return messages
 
 
@@ -216,10 +219,7 @@ def _find_matching_attachment(
                     f"{message.get('subject', '')} ({message['receivedDateTime']})"
                 )
                 save_path, file_name = _save_attachment(attachment, destination_path)
-                received_at = datetime.fromisoformat(
-                    message["receivedDateTime"].replace("Z", "+00:00")
-                )
-                return save_path, file_name, received_at
+                return save_path, file_name, _received_at(message)
 
     return None, None, None
 
@@ -333,6 +333,13 @@ def download_latest_excel_attachment(
         received_since=inbox_cutoff,
         sender=expected_sender,
     )
+    if inbox_messages:
+        shown = ", ".join(m["receivedDateTime"] for m in inbox_messages[:5])
+        more = f" (+{len(inbox_messages) - 5} more)" if len(inbox_messages) > 5 else ""
+        print(
+            f"{len(inbox_messages)} candidate message(s), newest first; the newest "
+            f"with a matching attachment is loaded. Received: {shown}{more}"
+        )
     save_path, file_name, received_at = _find_matching_attachment(
         graph,
         user,
@@ -345,6 +352,10 @@ def download_latest_excel_attachment(
         attachment_exclude,
     )
     if save_path is not None:
+        older = sum(1 for m in inbox_messages if _received_at(m) < received_at)
+        if older:
+            print(f"Loaded the mail received {received_at:%Y-%m-%dT%H:%M:%SZ}; "
+                  f"{older} older candidate message(s) not loaded.")
         return LatestAttachment(save_path, file_name, received_at)
 
     name_rules = (
