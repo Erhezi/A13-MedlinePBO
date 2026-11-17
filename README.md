@@ -239,7 +239,7 @@ The scheduled task must run under the same Windows user account that completed `
 
 ### Quick setup with the script (Autosub, Order Timing, Fill-Kill)
 
-`setup_task_scheduler.ps1` in the project folder creates the three data-load tasks with the schedules listed at the top of this README. It does not touch PBO or Allocation, which are set up by hand as described in the steps below. Run it in PowerShell, from the project folder, as the account that ran `first_time_setup.py`. Opening PowerShell as administrator avoids permission errors when it stores the password.
+`setup_task_scheduler.ps1` in the project folder creates the three data-load tasks with the schedules listed at the top of this README. It does not touch PBO or Allocation, which are set up by hand as described in the steps below. Open PowerShell **as administrator** (right-click PowerShell > Run as administrator), go to the project folder and run it. If PowerShell isn't elevated, the script stops before changing anything; only `-WhatIf` runs without admin.
 
 ```powershell
 cd "your_path_to_this_folder\A13-MedlinePBO"
@@ -249,7 +249,9 @@ powershell -ExecutionPolicy Bypass -File .\setup_task_scheduler.ps1 -Report orde
 Start-ScheduledTask -TaskName "Medline Order Timing Hourly"                   # try one now
 ```
 
-- It asks for the account's password and sets each task to run whether the user is logged on or not. The password is needed because the runs read the network share and SQL Server as that user. Add `-LoggedOnOnly` to skip the password; the tasks then run only while that user is logged on.
+- It asks which account the tasks run as, and for its password, and sets each task to **run whether the user is logged on or not**. The password is needed because the runs read the network share and SQL Server as that user. The account must be the one that ran `first_time_setup.py`. The prompt starts with the account PowerShell runs as; if the admin session uses a separate admin account, change the user name, and the script warns that it can't check that account's passphrase.
+- If registering fails, the message names the likely causes: a wrong password, or an account without the "Log on as a batch job" right.
+- `-LoggedOnOnly` skips the password and admin; the tasks then run only while that user is logged on (the development PC).
 - Each task runs `run_medline_<report>.bat --prd` from the folder the script is in. The launchers use `venv\Scripts\python.exe` and fall back to `.venv\`.
 - A task with the same name is replaced, so the script can be run again after a schedule change. `-Remove` deletes the selected tasks.
 - Start times are local clock times and stay put across daylight-saving changes. `-Start report=HH:mm` moves a task's start; it then repeats hourly (Autosub every 4 hours) until the usual end, 11:59 PM (Autosub 5:00 PM).

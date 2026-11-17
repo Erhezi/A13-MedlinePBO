@@ -20,8 +20,12 @@
     that ran "python first_time_setup.py" (the passphrase is saved per user).
     By default the script asks for that account's password and sets the tasks
     to run whether the user is logged on or not. The password is needed: the
-    runs read the network share and SQL Server as that user. Use -LoggedOnOnly
-    to skip the password; the tasks then run only while the user is logged on.
+    runs read the network share and SQL Server as that user. This needs
+    PowerShell opened as administrator (right-click > Run as administrator);
+    the script stops before changing anything if it is not.
+
+    Use -LoggedOnOnly to skip the password; the tasks then run only while the
+    user is logged on, and administrator is not needed.
 
 .PARAMETER Report
     Which tasks to set up: autosub, ordertiming, fillkill. Default: all three.
@@ -222,6 +226,17 @@ $schedule    </CalendarTrigger>
 
 $selected = @($Tasks.Keys | Where-Object { $Report -contains $_ })
 
+# Tasks that run whether the user is logged on or not are registered (and
+# removed) from an administrator PowerShell on the server. -WhatIf changes
+# nothing, so it runs without.
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin -and -not $LoggedOnOnly -and -not $WhatIfPreference) {
+    throw ('Nothing was changed: open PowerShell as administrator (right-click > Run as administrator), ' +
+           'cd to the project folder and run this again. Tasks that run whether the user is logged on ' +
+           'or not need it. (-LoggedOnOnly sets up tasks that run only while you are logged on, without admin.)')
+}
+
 # ---- Remove ----------------------------------------------------------------
 if ($Remove) {
     foreach ($key in $selected) {
@@ -257,8 +272,15 @@ if ($LoggedOnOnly) {
     $runAs = $currentUser
     $logonType = 'InteractiveToken'
     $password = $null
+} elseif ($WhatIfPreference -and -not $Credential) {
+    # Nothing is registered, so don't ask for the password.
+    $runAs = $currentUser
+    $logonType = 'Password'
+    $password = $null
 } else {
     if (-not $Credential) {
+        # An administrator PowerShell may belong to a separate admin account;
+        # the user name can be changed in the prompt.
         $Credential = Get-Credential -UserName $currentUser `
             -Message 'Account the Medline tasks run as (the one that ran first_time_setup.py)'
         if (-not $Credential) { throw 'No credential given; nothing was changed.' }
@@ -267,17 +289,21 @@ if ($LoggedOnOnly) {
     $logonType = 'Password'
     $password = $Credential.GetNetworkCredential().Password
 }
+$logonNote = if ($logonType -eq 'Password') { 'whether logged on or not' } else { 'only while logged on' }
 
-if ($runAs -ieq $currentUser -and
-    -not [Environment]::GetEnvironmentVariable('PBO_SECRET_PASSPHRASE', 'User')) {
-    Write-Warning "$runAs has no PBO_SECRET_PASSPHRASE user variable; run 'python first_time_setup.py' as this user, or every run will fail."
+if ($runAs -ieq $currentUser) {
+    if (-not [Environment]::GetEnvironmentVariable('PBO_SECRET_PASSPHRASE', 'User')) {
+        Write-Warning "$runAs has no PBO_SECRET_PASSPHRASE user variable; run 'python first_time_setup.py' as this user, or every run will fail."
+    }
+} else {
+    Write-Warning "The tasks run as $runAs, not $currentUser (this PowerShell). Make sure $runAs has run 'python first_time_setup.py'; its passphrase can't be checked from here."
 }
 
 # ---- Register --------------------------------------------------------------
 foreach ($key in $selected) {
     $task = $Tasks[$key]
     $xml = New-TaskXml $task $runAs $logonType
-    $action = "Register as $runAs ($logonType), --$Mode"
+    $action = "Register to run as $runAs $logonNote, --$Mode"
     if (-not $PSCmdlet.ShouldProcess($task.Name, $action)) { continue }
 
     $register = @{ TaskName = $task.Name; Xml = $xml; Force = $true }
@@ -285,7 +311,13 @@ foreach ($key in $selected) {
         $register.User = $runAs
         $register.Password = $password
     }
-    Register-ScheduledTask @register | Out-Null
+    try {
+        Register-ScheduledTask @register -ErrorAction Stop | Out-Null
+    } catch {
+        throw ("Could not register '$($task.Name)': $($_.Exception.Message) " +
+               "Check the password, and that $runAs has the 'Log on as a batch job' right " +
+               '(Local Security Policy > Local Policies > User Rights Assignment).')
+    }
     Write-Host "Registered: $($task.Name)"
 }
 
@@ -298,8 +330,9 @@ foreach ($key in $selected) {
     $info = Get-ScheduledTaskInfo -TaskName $name
     $t = Get-ScheduledTask -TaskName $name
     Write-Host ("{0,-28} next run {1:yyyy-MM-dd HH:mm}   {2} {3}" -f `
-        $name, $info.NextRunTime, $t.Actions[0].Execute, $t.Actions[0].Arguments)
+        $name, $info.NextRunTime, (Split-Path $t.Actions[0].Execute.Trim('"') -Leaf), $t.Actions[0].Arguments)
 }
+Write-Host "All run as $runAs, $logonNote, from $ProjectDir"
 Write-Host ''
 Write-Host 'To try one now:  Start-ScheduledTask -TaskName "Medline Order Timing Hourly"'
 Write-Host 'Then check its log folder (logging.log_dir in the report''s config.yaml) and the ETL-health table.'
