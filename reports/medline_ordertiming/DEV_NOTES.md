@@ -5,7 +5,7 @@
 loaded. The hourly feed started on 2026-11-17: mails at 07:23, 08:15, 09:37 and
 10:11 ET (stamps `06-21-02` .. `09-08-27`, i.e. Central time), each a
 day-to-date snapshot (518 -> 1083 -> 1406 -> 1552 lines). The four files are in
-`OrderTiming\Raw`, and the 10:11 one is loaded (Report Date 2026-11-17, 1552
+`Medline OrderTiming\Raw`, and the 10:11 one is loaded (Report Date 2026-11-17, 1552
 lines). **Scheduled** as Task Scheduler "Medline Order Timing Hourly" (`--prd`,
 every day hourly at :28, 6:28 AM–11:28 PM, 2 min before Fill-Kill), set up on
 the server by `setup_task_scheduler.ps1`. The development PC runs it 7 minutes
@@ -60,7 +60,7 @@ run.
 - **Key** (Report Date, Order #, Order Line), with no surrogate ID, since IDs would churn on every hourly reload.
 - **No hard "older file" guard.** The pipeline always takes the newest mail by received time. If a day shrinks, the run logs a WARNING and an ETL-health warning but still loads. The backfill loads only the fullest file per day.
 - **Freshness warning, not failure.** If the newest mail is over 90 min old (`email.max_mail_age_minutes`), the run still loads it and logs SUCCESS with "Warning: no new file in N min" in the ETL-health `Error` column. Fill-Kill uses the same rule (`src/msgraph.stale_mail_warning`). The test phase (one file a day) warns on every run, and so will the first run of each morning if Medline doesn't send overnight.
-- **Raw files are the intra-day history.** Each hourly download keeps its own stamped name in `OrderTiming\Raw`. Monthly maintenance moves last month's files to `OrderTiming\Archived\<yyyy>\<mm>` (`maintenance.archive_by_month`, also on for Fill-Kill). The month comes from the date in the name, not the modified time, because the newest mail is re-downloaded every run, so a day's last file is saved again the next morning.
+- **Raw files are the intra-day history.** Each hourly download keeps its own stamped name in `Medline OrderTiming\Raw` (its own folder beside `Medline FillKill` since 2026-11-17; it was `Medline FillKill\OrderTiming`). Monthly maintenance moves last month's files to `Medline OrderTiming\Archived\<yyyy>\<mm>` (`maintenance.archive_by_month`, also on for Fill-Kill). The month comes from the date in the name, not the modified time, because the newest mail is re-downloaded every run, so a day's last file is saved again the next morning.
 - **Column names as-is**, typos included (Fill-Kill convention).
 - **Shared match keys** in `src/medline_keys.py`: `PO`, `POLine` and `ShipTo`, the same rule in Fill-Kill. `POLine` is `VARCHAR(5)` text without leading zeros, the format of `POLine` in PLMPreprocessorShared's `infor.PURCHASEORDER_LINE` (digits, no zeros). Fill-Kill v1.1 gained `ShipTo`, and its `POLine` changed from `INT` to text. `ensure_tables` now adds missing columns to existing tables, and the 291 old Fill-Kill rows were back-filled once by SQL. Since 2026-11-17 (Order Timing v1.1, Fill-Kill v1.3) both feeds also carry `SoldTo` (sold-to without leading zeros), and both store the order line without leading zeros (`Order Line` here, `Order Line #` in Fill-Kill), so the feeds join line to line. The 2623 Order Timing rows already loaded were fixed once by SQL (Order Line stripped, SoldTo filled, `load stamp` untouched).
 
@@ -69,7 +69,7 @@ run.
 1. **Day boundary and hours.** Which hours will Medline send after go-live, and on weekends? What drives the Date Range (Order Create Date in every sample)? Does a line created at 11:55 PM ever show up in the next day's report?
 2. **No mail in the last day** fails the run and sends an email, as Fill-Kill does. During the test phase (one file a day, none on weekends) that means a failure on Monday mornings. Decide skip-vs-fail once the hourly cadence is known.
 3. **File stamp.** Can Medline switch to a 24-hour clock? Then the backfill could order a day's files by name.
-4. **Intra-day history.** The DB keeps only the latest file per day; the raw files stay in `OrderTiming\Raw`, then `Archived\<yyyy>\<mm>`. Is an hourly snapshot ever needed in the DB?
+4. **Intra-day history.** The DB keeps only the latest file per day; the raw files stay in `Medline OrderTiming\Raw`, then `Archived\<yyyy>\<mm>`. Is an hourly snapshot ever needed in the DB?
 
 ## 4. Go-live checklist
 

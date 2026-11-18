@@ -18,7 +18,8 @@ email:
   keyword: "ORDER DETAIL REPORT"
   # Only mail whose From address is this account is considered (case-insensitive).
   expected_sender: "insight@medline.com"
-  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\OrderTiming\Raw'
+  # Own folder beside Medline FillKill since 2026-11-17 (was Medline FillKill\OrderTiming).
+  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline OrderTiming\Raw'
   max_messages: 100
   attachment_prefix: "MHS - ORDER DETAIL REPORT"
   attachment_extensions: [".xls"]
@@ -58,7 +59,7 @@ report:
   # ---------------------------------------------------------------------
   # No Excel output. output_dir is used only by the monthly maintenance step,
   # to archive downloaded raw files older than this month.
-  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\OrderTiming\Raw'
+  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline OrderTiming\Raw'
 
 # ──────────────────────────────────────────────
 # Notification — success_recipients is empty on purpose, as for Fill-Kill.
@@ -78,14 +79,14 @@ notification:
 # Logging
 # ──────────────────────────────────────────────
 logging:
-  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\OrderTiming\Log'
+  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline OrderTiming\Log'
 
 # ──────────────────────────────────────────────
 # Maintenance — monthly cleanup & archiving
 # ──────────────────────────────────────────────
 maintenance:
   cleanup_day_range: [3, 10]
-  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\OrderTiming\Archived'
+  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline OrderTiming\Archived'
   output_glob: "MHS - ORDER DETAIL REPORT*.xls"
   # Archived\<yyyy>\<mm>, by the date in the file name (an hourly feed fills a
   # flat folder fast). Files keep their name; nothing in Archived is purged.

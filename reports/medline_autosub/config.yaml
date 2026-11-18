@@ -20,7 +20,8 @@ email:
   # Only mail whose From address is this account is considered (case-insensitive).
   # Keeps out internal "RE:" replies that carry the same attachment.
   expected_sender: "insight@medline.com"
-  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Autosub\Raw'
+  # Own folder beside Medline FillKill since 2026-11-17 (was Medline FillKill\Autosub).
+  destination_path: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Autosub\Raw'
   max_messages: 100
   attachment_prefix: "Daily Autosub Management Report"
   attachment_extensions: [".xls"]
@@ -46,7 +47,7 @@ report:
   # ---------------------------------------------------------------------
   # No Excel output. output_dir is used only by the monthly maintenance step,
   # to archive downloaded raw files older than this month.
-  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Autosub\Raw'
+  output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Autosub\Raw'
 
 # ──────────────────────────────────────────────
 # Notification — success_recipients is empty on purpose, as for Fill-Kill.
@@ -67,14 +68,14 @@ notification:
 # Logging
 # ──────────────────────────────────────────────
 logging:
-  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Autosub\Log'
+  log_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Autosub\Log'
 
 # ──────────────────────────────────────────────
 # Maintenance — monthly cleanup & archiving
 # ──────────────────────────────────────────────
 maintenance:
   cleanup_day_range: [3, 10]
-  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Autosub\Archived'
+  output_archive_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline Autosub\Archived'
   output_glob: "Daily Autosub Management Report*.xls"
 
 # ──────────────────────────────────────────────
