@@ -27,7 +27,7 @@ email:
   max_mail_age_minutes: 90
 
 report:
-  version: "1.3"
+  version: "1.4"
   # --------------------  v1.0 - 2026-10-06 --------------------
   # - initial load: 11 daily exports (2026-09-20 .. 2026-09-30) stitched and
   #   upserted via reports/medline_fillkill/backfill.py
@@ -67,6 +67,15 @@ report:
   #   Order Timing; the MHS feed already sends it unpadded, so no existing
   #   row changed
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.4 - 2026-11-18 --------------------
+  # - an order line listed more than once no longer fails the run: the first
+  #   row in file order is kept, the rest dropped, and a warning naming the
+  #   lines and the differing columns is logged to ETL health and emailed to
+  #   notification.warning_recipients (not seen in any file so far; Order
+  #   Timing started repeating shipped lines once per lot on 2026-11-17)
+  # - unchanged: a missing column or key value fails the run; an extra column
+  #   is a warning in ETL health only
+  # ---------------------------------------------------------------------
   # No Excel output. output_dir/output_glob are used only by the monthly
   # maintenance step, to archive downloaded raw files older than this month.
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline FillKill\Raw'
@@ -81,6 +90,10 @@ notification:
   success_recipients: []
   success_cc_recipients: []
   failure_recipients:
+    - "dli2@montefiore.org"
+  # Emailed (source file attached) when a run loads but the file lists an
+  # order line more than once. Other warnings only go to ETL health.
+  warning_recipients:
     - "dli2@montefiore.org"
   test_recipients:
     - "dli2@montefiore.org"

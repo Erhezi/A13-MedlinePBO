@@ -45,8 +45,28 @@ On the 257-line 2026-10-07 sample
 - Bad / rejected = count of `Bad Line = YES`. `Rej Code` is E1 / S1 / X1 on the same rows, which always have Shipped 0 and no delivery doc.
 - EDI 850 = distinct POs, 855 = orders with an `855 Date`, 856 = orders with an ASN.
 
-The ingest checks the first four of these totals. Only the line count fails the
-run.
+The ingest checks the first four of these totals. A line-count mismatch is a
+warning that is also emailed (`notification.warning_recipients`); until v1.2
+it failed the run.
+
+### One row per lot once shipped (seen 2026-11-17)
+
+From the 11-17 `03-06-44` file on (the 16:35 run), the file had exactly 28 rows
+more than `# of Order Lines` in every hourly file, and those 9 runs failed.
+The extra rows were not junk. A line that shipped from several lots is listed
+once per lot: 27 lines with 2–3 lots, every column identical except `Lot` and
+`Expiration`, and `Order Qty` / `Shipped Qty` the line's totals repeated on
+each row. Medline's total counts distinct lines. The first lots showed up as
+ASNs started (EDI 856 count 8 -> 97 between the 02-08-42 and 03-06-44 files).
+
+v1.2 (`ingestion.split_lots`) folds such a line into one row: `Lot` = its
+lots joined with ` | `, earliest expiration first, and `Expiration` = the
+earliest. Every lot also goes to `MedlineLot`: one row per lot,
+`Lot Seq` 1..n by expiration then lot, PK (Order #, Order Line, Lot Seq),
+upserted with create / update stamps. A line that repeats with anything else
+differing, e.g. a line split across two deliveries, still fails the run,
+since we haven't seen one yet. 2026-11-17 was reloaded from its last file
+(`11-00-08`, 3320 lines, 527 lots).
 
 ### Formats
 

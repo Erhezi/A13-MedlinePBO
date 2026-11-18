@@ -8,8 +8,12 @@ are blank. Those footer rows are dropped by shape (see ``remove_footer``).
 Each file is a day-to-date snapshot (single-day Date Range): a later file the
 same day repeats the earlier lines, with their latest values, plus new ones.
 
-Every export must honour the primary key (Sales Order #, Order Line #): a
-missing or repeated key fails the run before anything is written.
+The primary key is (Sales Order #, Order Line #). A row missing either value
+fails the run before anything is written. A line listed more than once (several
+shipments of one line?) is not expected: since v1.4 the first row in file order
+is kept, the others dropped, and a warning that is also emailed
+(``Prepared.alerts``, to notification.warning_recipients) names the lines and
+the columns that differ.
 
 Source column names are kept as-is (whitespace-stripped), with one exception:
 v3's "Customer Service Comments (SAP order line level Internal Item History
@@ -24,7 +28,7 @@ If the layout changes, the outcome depends on the kind of change:
   is written, and the error lists the missing and the unexpected columns;
 - an extra column appears -> the run still loads the expected columns, and a
   "Warning: ... not loaded" goes to the log and to the ETL-health Error column
-  of the SUCCESS row. Loading it needs a code change (SOURCE_COLUMNS +
+  of the SUCCESS row (no email). Loading it needs a code change (SOURCE_COLUMNS +
   persistence.COLUMN_TYPES; ensure_tables then adds it to the tables);
 - columns in a new order, or headers with extra spaces -> no effect.
 
@@ -40,6 +44,7 @@ Four derived columns are appended (see src/medline_keys.py):
 """
 
 import os
+from collections import namedtuple
 
 import pandas as pd
 
@@ -79,6 +84,10 @@ INT_COLUMNS = [
     "Open Product Allocation Qty", "DED Qty", "30 Day Delivered Qty",
 ]
 DECIMAL_COLUMNS = ["Forecast Qty"]   # 3 decimals in the source
+
+# What prepare() returns. *alerts* are the warnings (also in *warnings*) that
+# are emailed to notification.warning_recipients.
+Prepared = namedtuple("Prepared", "rows warnings alerts")
 
 
 def read_fillkill_file(file_path):
@@ -177,12 +186,12 @@ def coerce_types(df):
 
 
 def validate_keys(df, source_name):
-    """Fail if any order line is missing a key or a key appears more than once.
+    """Fail if any order line is missing a primary-key value.
 
     (Sales Order #, Order Line #) is the primary key of both the staging and the
-    target table, and every export is expected to honour it. A violation raises,
-    so the hourly run fails before touching the database and the runner logs
-    FAIL to ETL health and sends the failure email with this message in the log.
+    target table, so such a row cannot be loaded. It raises, so the hourly run
+    fails before touching the database and the runner logs FAIL to ETL health
+    and sends the failure email with this message in the log.
     """
     missing_key = df[KEY_COLUMNS].isna().any(axis=1)
     if missing_key.any():
@@ -190,25 +199,51 @@ def validate_keys(df, source_name):
             f"{source_name}: {missing_key.sum()} row(s) are missing a primary-key "
             f"value {KEY_COLUMNS} (file row(s) {(df.index[missing_key] + 2).tolist()[:10]})."
         )
+
+
+def drop_repeated_keys(df, source_name):
+    """Keep the first row of an order line listed more than once; return (rows, alerts).
+
+    Each line is expected once per export. A repeat is unexpected but not
+    fatal: the first row in file order is kept, the others dropped, and the
+    alert (a "Warning: ..." emailed to notification.warning_recipients) names
+    the lines and the columns whose values differ between the repeats.
+    """
     dup = df.duplicated(subset=KEY_COLUMNS, keep=False)
-    if dup.any():
-        dup_keys = df.loc[dup, KEY_COLUMNS].drop_duplicates()
-        examples = [tuple(k) for k in dup_keys.head(10).itertuples(index=False)]
-        raise ValueError(
-            f"{source_name}: primary key {KEY_COLUMNS} is not unique — {len(dup_keys)} "
-            f"key(s) repeated across {dup.sum()} rows, e.g. {examples}."
-        )
-    print(f"Primary-key check passed — {len(df)} unique {KEY_COLUMNS}.")
+    if not dup.any():
+        print(f"Primary-key check passed — {len(df)} unique {KEY_COLUMNS}.")
+        return df, []
+    repeats = df[dup]
+    dup_keys = repeats[KEY_COLUMNS].drop_duplicates()
+    examples = [tuple(k) for k in dup_keys.head(5).itertuples(index=False)]
+    by_key = repeats.groupby(KEY_COLUMNS)
+    differing = [
+        col for col in df.columns
+        if col not in KEY_COLUMNS and by_key[col].nunique(dropna=False).gt(1).any()
+    ]
+    kept = df[~df.duplicated(subset=KEY_COLUMNS)].reset_index(drop=True)
+    alert = (
+        f"Warning: {source_name} lists {len(dup_keys)} order line(s) {KEY_COLUMNS} more "
+        f"than once ({dup.sum()} rows); kept the first row of each, dropped "
+        f"{len(df) - len(kept)}. e.g. {examples}; columns that differ: "
+        f"{differing or 'none (identical rows)'}"
+    )
+    print(alert)
+    return kept, [alert]
 
 
 def prepare(file_path):
     """Read, validate and cleanse ONE export into the load shape.
 
-    Returns (rows, warnings) — see ``read_fillkill_file``.
+    Returns a ``Prepared``: *rows* in LOAD_COLUMNS, *warnings* (extra columns,
+    see ``read_fillkill_file``, plus the alerts) and *alerts* (repeated lines,
+    see ``drop_repeated_keys``).
     """
+    source_name = os.path.basename(file_path)
     df, warnings = read_fillkill_file(file_path)
     df = medline_keys.strip_order_line(df, "Order Line #")
-    validate_keys(df, os.path.basename(file_path))
+    validate_keys(df, source_name)
+    df, alerts = drop_repeated_keys(df, source_name)
     df = add_derived_columns(df)
     df = coerce_types(df)
-    return df[LOAD_COLUMNS], warnings
+    return Prepared(df[LOAD_COLUMNS], warnings + alerts, alerts)

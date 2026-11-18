@@ -56,7 +56,7 @@ def main(argv=None):
     # chronological.
     files = sorted(files, key=os.path.basename)
     # (Column warnings are printed by prepare; there is no ETL-health row here.)
-    prepared = [ingestion.prepare(path)[0] for path in files]
+    prepared = [ingestion.prepare(path).rows for path in files]
     print(f"Prepared {sum(len(df) for df in prepared)} rows from {len(files)} file(s).")
     if args.dry_run:
         print("Dry run — nothing written to the database.")

@@ -55,20 +55,24 @@ def main(argv=None):
     # anything is written, then keep the fullest file of each Report Date.
     best = {}
     for path in sorted(files, key=os.path.basename):
-        df, report_date, _ = ingestion.prepare(path)
-        if report_date not in best or len(df) >= len(best[report_date][1]):
-            best[report_date] = (path, df)
+        prepared = ingestion.prepare(path)
+        report_date = prepared.report_date
+        if report_date not in best or len(prepared.rows) >= len(best[report_date][1].rows):
+            best[report_date] = (path, prepared)
 
     print(f"\n{len(files)} file(s) -> {len(best)} Report Date(s):")
     for report_date in sorted(best):
-        path, df = best[report_date]
-        print(f"  {report_date}: {len(df)} line(s) from {os.path.basename(path)}")
+        path, prepared = best[report_date]
+        print(f"  {report_date}: {len(prepared.rows)} line(s), {len(prepared.lots)} lot(s) "
+              f"from {os.path.basename(path)}")
     if args.dry_run:
         print("Dry run — nothing written to the database.")
         return
 
     for report_date in sorted(best):
-        persistence.replace_day(best[report_date][1], report_date, config["persistence"])
+        prepared = best[report_date][1]
+        persistence.replace_day(prepared.rows, report_date, config["persistence"])
+        persistence.upsert_lots(prepared.lots, config["persistence"])
 
 
 if __name__ == "__main__":

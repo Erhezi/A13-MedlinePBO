@@ -14,18 +14,28 @@ is inserted in their place (see ``src/staged_upsert.stage_and_replace``).
 The target's primary key is (Report Date, Order #, Order Line), with Report
 Date first so the day delete is a range seek. ``load stamp`` is when the row's
 file was loaded.
+
+Each lot shipped on a line also goes to ``lot_table`` (MedlineLot), staged in
+``lot_staging_table`` and upserted (MERGE, never deleted) on (Order #,
+Order Line, Lot Seq), with create / update stamps — see ``upsert_lots``. It is
+a separate transaction after the day replace; both loads are idempotent, so a
+failure in the second is put right by the next run.
 """
 
 from src import staged_upsert
 
-from reports.medline_ordertiming.ingestion import KEY_COLUMNS, LOAD_COLUMNS, REPORT_DATE_COLUMN
+from reports.medline_ordertiming.ingestion import (
+    KEY_COLUMNS, LOAD_COLUMNS, LOT_KEY_COLUMNS, LOT_LOAD_COLUMNS, REPORT_DATE_COLUMN,
+)
 
 # Column -> SQL type, in LOAD_COLUMNS order. Identifiers keep their leading
 # zeros (VARCHAR), except Order Line, stored without them since v1.1; PO is the
 # 10-digit PO number, and POLine / ShipTo / SoldTo the PO line / ship-to /
 # sold-to number without leading zeros (still VARCHAR; POLine is VARCHAR(5)
 # like the PO line in PLMPreprocessorShared). SoldTo was appended to the
-# existing tables by ensure_tables in v1.1.
+# existing tables by ensure_tables in v1.1. Lot holds every lot of a multi-lot
+# line joined with " | ", hence VARCHAR(255) (both tables ALTERed from
+# VARCHAR(50) once, in v1.2).
 COLUMN_TYPES = {
     "Order Create Date": "DATE",
     "Sold-To #": "VARCHAR(20)",
@@ -65,7 +75,7 @@ COLUMN_TYPES = {
     "ASN Creation Time": "TIME(0)",
     "Branch": "VARCHAR(10)",
     "Order Line": "VARCHAR(10)",
-    "Lot": "VARCHAR(50)",
+    "Lot": "VARCHAR(255)",
     "Expiration": "DATE",
     "PO Type": "VARCHAR(20)",
     "SCAC": "VARCHAR(10)",
@@ -78,6 +88,21 @@ COLUMN_TYPES = {
     "source file": "VARCHAR(260)",
 }
 assert list(COLUMN_TYPES) == LOAD_COLUMNS, "COLUMN_TYPES must follow LOAD_COLUMNS"
+
+# MedlineLot: one row per lot shipped on an order line (a single Lot each).
+LOT_COLUMN_TYPES = {
+    "Order #": "VARCHAR(20)",
+    "Order Line": "VARCHAR(10)",
+    "Lot Seq": "INT",
+    "Lot": "VARCHAR(50)",
+    "Expiration": "DATE",
+    "Order Create Date": "DATE",
+    "Manufacturer": "VARCHAR(100)",
+    "Mfr Item #": "VARCHAR(100)",
+    "Medline Item #": "VARCHAR(50)",
+    "Item Description": "VARCHAR(255)",
+}
+assert list(LOT_COLUMN_TYPES) == LOT_LOAD_COLUMNS, "LOT_COLUMN_TYPES must follow LOT_LOAD_COLUMNS"
 
 
 def replace_day(df, report_date, persist_cfg):
@@ -103,3 +128,20 @@ def replace_day(df, report_date, persist_cfg):
             f"{counts['inserted']} line(s) — an older file loaded after a newer one?"
         )
     return counts
+
+
+def upsert_lots(lots, persist_cfg):
+    """Stage *lots* and upsert them into MedlineLot; return row counts.
+
+    Lot Seq 1 is the line's earliest-expiring lot. A lot is never deleted, so
+    one that drops off a later file stays as last seen.
+    """
+    return staged_upsert.stage_and_upsert(
+        lots,
+        persist_cfg,
+        schema=persist_cfg["schema"],
+        staging_table=persist_cfg["lot_staging_table"],
+        target_table=persist_cfg["lot_table"],
+        column_types=LOT_COLUMN_TYPES,
+        key_columns=LOT_KEY_COLUMNS,
+    )

@@ -20,8 +20,8 @@ from src.msgraph import download_latest_excel_attachment, stale_mail_warning
 from reports.medline_ordertiming import ingestion, persistence
 
 # Stages this pipeline reports; the runner adds 3 framing stages
-# (config load, success notify, ETL-health) for a total of [1/6]..[6/6].
-STEP_COUNT = 3
+# (config load, success notify, ETL-health) for a total of [1/7]..[7/7].
+STEP_COUNT = 4
 
 
 def run(config, secrets, ctx):
@@ -42,10 +42,13 @@ def run(config, secrets, ctx):
         ctx.warnings.append(stale)
     ctx.progress.step(f"Email attachment downloaded: {found.file_name}")
 
-    # ── 2. Ingest, check totals & keys, cleanse (a violation raises -> FAIL) ──
-    df, report_date, warnings = ingestion.prepare(save_path)
+    # ── 2. Ingest, check totals & keys, cleanse (a violation raises -> FAIL;
+    #       a "# of Order Lines" mismatch is a warning, emailed as an alert) ──
+    prepared = ingestion.prepare(save_path)
+    df, report_date = prepared.rows, prepared.report_date
     ctx.row_count = len(df)
-    ctx.warnings.extend(warnings)
+    ctx.warnings.extend(prepared.warnings)
+    ctx.alerts.extend(prepared.alerts)
     ctx.progress.step(f"File ingested & cleansed — {len(df)} lines, Report Date {report_date}")
 
     # ── 3. Stage, then replace the Report Date in the target ──
@@ -58,5 +61,12 @@ def run(config, secrets, ctx):
     ctx.progress.step(
         f"Report Date {report_date} replaced — {counts['deleted']} old line(s) deleted, "
         f"{counts['inserted']} inserted"
+    )
+
+    # ── 4. Upsert each lot shipped into MedlineLot ──
+    lot_counts = persistence.upsert_lots(prepared.lots, config["persistence"])
+    ctx.progress.step(
+        f"Lots upserted — {lot_counts['staged']} lot(s): {lot_counts['inserted']} inserted, "
+        f"{lot_counts['updated']} updated, {lot_counts['unchanged']} unchanged"
     )
     return save_path

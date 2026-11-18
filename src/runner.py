@@ -21,7 +21,9 @@ from src.config_loader import load_config, load_secrets, resolve_config_path
 from src.db import insert_etl_health
 from src.logger import TeeLogger
 from src.maintenance import run_maintenance
-from src.msgraph import send_success_notification, send_failure_notification
+from src.msgraph import (
+    send_failure_notification, send_success_notification, send_warning_notification,
+)
 from src.secret_crypto import SECRET_ENV_VAR
 
 PIPELINE_TIMEOUT_SECONDS = 15 * 60
@@ -53,6 +55,9 @@ class RunContext:
 
     ``warnings`` are non-fatal problems ("Warning: ..." strings); on success
     the runner writes them, joined with "; ", to the ETL-health Error column.
+    ``alerts`` are the warnings (also put in ``warnings``) that are worth an
+    email: on success the runner sends them to
+    ``notification.warning_recipients``, with the source file attached.
     ``email_notes`` are extra lines for the success email body.
     """
 
@@ -62,6 +67,7 @@ class RunContext:
         self.progress = progress
         self.skip_reason = None
         self.warnings = []
+        self.alerts = []
         self.email_notes = []
 
 
@@ -81,6 +87,7 @@ def _apply_notification_mode(config, mode):
     notification["success_recipients"] = test_recipients
     notification["success_cc_recipients"] = []
     notification["failure_recipients"] = test_recipients
+    notification["warning_recipients"] = test_recipients
     report_name = notification.get("report_name", "Report")
     if not report_name.endswith("(TEST)"):
         notification["report_name"] = f"{report_name} (TEST)"
@@ -173,6 +180,13 @@ def run_worker(pipeline_fn, config_path, log_path, package_path, pipeline_steps,
         send_success_notification(
             config, secrets, output_path, extra_lines=ctx.email_notes,
         )
+        if ctx.alerts:
+            # The data is already loaded, so a mail error here only logs; the
+            # warnings still reach the ETL-health Error column below.
+            try:
+                send_warning_notification(config, secrets, ctx.alerts, ctx.source_file_path)
+            except Exception as mail_exc:
+                print(f"Failed to send warning notification: {mail_exc}")
         progress.step("Success notification sent")
 
         insert_etl_health(

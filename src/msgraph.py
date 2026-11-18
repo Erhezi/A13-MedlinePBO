@@ -491,6 +491,33 @@ def _dioh_notes(report_cfg):
     )
 
 
+def send_warning_notification(config, secrets, warnings, attachment_path=None):
+    """Email *warnings* from a successful run to notification.warning_recipients.
+
+    The run still loaded; the email (with *attachment_path*, the source file,
+    attached when it exists) is for a problem worth a look. Skips silently when
+    no warning recipients are configured.
+    """
+    notification = config["notification"]
+    recipients = notification.get("warning_recipients", [])
+    if not recipients:
+        print("No warning recipients configured — skipping warning notification.")
+        return
+    report_name = notification.get("report_name", "Report")
+    send_email_with_attachment(
+        config,
+        secrets,
+        recipients,
+        subject=f"{report_name} Report — Warning",
+        body_text=(
+            f"The {report_name} run loaded its file, with these warnings:\n\n"
+            + "\n".join(f"- {w}" for w in warnings)
+            + "\n\nThe source file is attached."
+        ),
+        attachment_path=attachment_path,
+    )
+
+
 def send_failure_notification(config, secrets, log_path):
     """Notify failure recipients with the error log attached."""
     notification = config["notification"]

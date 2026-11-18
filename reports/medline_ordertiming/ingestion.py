@@ -19,11 +19,20 @@ Each file is a day-to-date snapshot: the Date Range is a single day, which
 becomes ``Report Date``, and a later file the same day repeats the earlier
 lines plus the new ones (see persistence.py for the day-replace load).
 
+Once a line ships, Medline writes it once per lot shipped (seen from
+2026-11-17): every column repeats except Lot and Expiration, and the
+quantities are the line's, not the lot's. ``split_lots`` folds such a line back
+into one row (lots joined in Lot, earliest Expiration) and lists every lot
+separately for the MedlineLot table (see persistence.py). Medline's
+"# of Order Lines" counts lines, so it is checked against the folded rows.
+
 Checks that fail the run before anything is written: a missing column, no
-single-day Date Range, a data row missing Order # / Order Line or repeating
-them, an unparseable date / time / number, and a "# of Order Lines" total that
-disagrees with the rows read (a truncated attachment). The other totals are
-compared too, but a mismatch there is only a warning.
+single-day Date Range, a data row missing Order # / Order Line, a line that
+repeats with anything other than Lot / Expiration differing, and an
+unparseable date / time / number. A "# of Order Lines" total that disagrees
+with the lines read is a warning that is also emailed (``Prepared.alerts``);
+a mismatch in the other totals, or a column outside SOURCE_COLUMNS (not
+loaded), is only a warning (ETL-health Error column).
 
 Source column names are kept as-is (whitespace-stripped, so typos such as
 "EDI Date Re" and the double space in "Mins  to Order Create" stay).
@@ -39,6 +48,7 @@ src/medline_keys.py), then Report Date and source file, follow:
 
 import os
 import re
+from collections import namedtuple
 from datetime import datetime
 
 import pandas as pd
@@ -65,6 +75,21 @@ SOURCE_FILE_COLUMN = "source file"
 
 # Column order shared by the staging and target tables (see persistence.py).
 LOAD_COLUMNS = SOURCE_COLUMNS + DERIVED_COLUMNS + [REPORT_DATE_COLUMN, SOURCE_FILE_COLUMN]
+
+# One row per lot shipped on a line, for the MedlineLot tables.
+LOT_COLUMN = "Lot"
+EXPIRATION_COLUMN = "Expiration"
+LOT_SEQ_COLUMN = "Lot Seq"
+LOT_SEPARATOR = " | "
+LOT_KEY_COLUMNS = LINE_KEY + [LOT_SEQ_COLUMN]
+LOT_LOAD_COLUMNS = LOT_KEY_COLUMNS + [
+    LOT_COLUMN, EXPIRATION_COLUMN, "Order Create Date", "Manufacturer", "Mfr Item #",
+    "Medline Item #", "Item Description",
+]
+
+# What prepare() returns. *alerts* are the warnings (also in *warnings*) that
+# are emailed to notification.warning_recipients.
+Prepared = namedtuple("Prepared", "rows lots report_date warnings alerts")
 
 # Real Excel dates/times, except that Medline writes "SAP Delv Doc Create Time"
 # and "ASN Creation Time" as text ("7:30:18AM") and "ASN Creation Date" as
@@ -94,22 +119,53 @@ DATE_RANGE_PATTERN = re.compile(
 def read_order_detail_file(file_path):
     """Read one export: strip names/values, validate, split off totals and footer.
 
-    Returns (rows, totals, footer).
+    Returns (rows, totals, footer, warnings). A missing column raises; a
+    column outside SOURCE_COLUMNS is not loaded and only yields a warning
+    (ETL-health Error column, no email), as in the Fill-Kill feed.
     """
+    source_name = os.path.basename(file_path)
     df = pd.read_excel(file_path, engine="calamine", dtype=str)
     df.columns = [str(col).strip() for col in df.columns]
-    validate_columns(df, SOURCE_COLUMNS)
+    extra = unexpected_columns(df)
+    validate_columns(df, SOURCE_COLUMNS, extra)
+    warnings = []
+    if extra:
+        warnings.append(
+            f"Warning: {source_name} has {len(extra)} column(s) outside the expected "
+            f"layout, not loaded: {extra}"
+        )
+        print(warnings[-1])
     df = df[SOURCE_COLUMNS].copy()
     for col in SOURCE_COLUMNS:
         df[col] = df[col].str.strip().replace("", pd.NA)
-    return split_trailer(df)
+    return (*split_trailer(df), warnings)
 
 
-def validate_columns(df, required_columns):
-    """Raise ValueError if any *required_columns* are missing from *df*."""
+def unexpected_columns(df):
+    """Columns of *df* outside SOURCE_COLUMNS.
+
+    A blank-header column with no values (pandas names it "Unnamed: <n>") is
+    just empty formatted cells, not a new column, so it is ignored.
+    """
+    return [
+        col for col in df.columns
+        if col not in SOURCE_COLUMNS
+        and not (col.startswith("Unnamed:") and df[col].isna().all())
+    ]
+
+
+def validate_columns(df, required_columns, unexpected=()):
+    """Raise ValueError if any *required_columns* are missing from *df*.
+
+    *unexpected* (the file's columns outside the expected layout) is added to
+    the message, so a renamed column shows up as a missing / unexpected pair.
+    """
     missing = [col for col in required_columns if col not in df.columns]
     if missing:
-        raise ValueError(f"Validation Failed. Missing columns: {missing}")
+        detail = f"Missing columns: {missing}"
+        if unexpected:
+            detail += f"; unexpected columns (renamed?): {list(unexpected)}"
+        raise ValueError(f"Validation Failed. {detail}")
     print("Column validation successful.")
     return True
 
@@ -164,12 +220,14 @@ def parse_totals(totals):
 
 
 def check_totals(df, totals, source_name):
-    """Compare Medline's totals with the rows read; return warning strings.
+    """Compare Medline's totals with the lines read; return (warnings, alerts).
 
-    "# of Order Lines" must equal the row count, else the attachment is cut
-    short or the layout moved — raise. The other totals are checked against
-    what they appear to count (verified on the 2026-10-07 sample) and only
-    warn, since their exact definition is Medline's.
+    *df* holds one row per order line (after ``split_lots``). A "# of Order
+    Lines" total that differs from the line count (a cut-short attachment, a
+    changed layout, or a new way of repeating lines) is a warning that is also
+    an alert, i.e. emailed; the load goes ahead. The other totals are checked
+    against what they appear to count (verified on the 2026-10-07 sample) and
+    only warn, since their exact definition is Medline's.
     """
     expected = {
         ORDER_LINES_TOTAL: len(df),
@@ -177,16 +235,17 @@ def check_totals(df, totals, source_name):
         "# of Medline Orders": df["Order #"].nunique(),
         "# of Bad / Rejected Lines": int(df["Bad Line"].eq("YES").sum()),
     }
-    warnings = []
+    warnings, alerts = [], []
     for label, actual in expected.items():
         if label not in totals:
             warnings.append(f"Warning: {source_name} has no '{label}' total to check")
         elif totals[label] != actual:
             if label == ORDER_LINES_TOTAL:
-                raise ValueError(
-                    f"{source_name}: the file says {totals[label]} order lines but "
-                    f"{actual} were read — truncated attachment or changed layout?"
+                alerts.append(
+                    f"Warning: {source_name} file line {totals[label]}, {actual} line were read"
                 )
+                warnings.append(alerts[-1])
+                continue
             warnings.append(
                 f"Warning: {source_name} total '{label}' is {totals[label]}, rows give {actual}"
             )
@@ -194,7 +253,75 @@ def check_totals(df, totals, source_name):
         print(w)
     if not warnings:
         print(f"Totals check passed — {len(df)} order lines.")
-    return warnings
+    return warnings, alerts
+
+
+def split_lots(df, source_name):
+    """Fold a line shipped from several lots into one row; list every lot.
+
+    Medline writes a shipped line once per lot, repeating every column but Lot
+    and Expiration. Returns (lines, lots):
+
+    - lines: one row per order line, in file order. A multi-lot line keeps its
+      other values; Lot becomes its lots joined with " | " (earliest
+      expiration first) and Expiration the earliest.
+    - lots: one row per lot for every row with a Lot, single-lot lines
+      included, numbered Lot Seq 1..n within the line by expiration then lot,
+      in LOT_LOAD_COLUMNS.
+
+    A line repeated with anything else differing is not a lot split: raise, as
+    a repeated key always did. Rows missing a key are left for validate_keys.
+    """
+    df = df.drop_duplicates().reset_index(drop=True)
+    by_expiry = (
+        df.assign(_expiry=pd.to_datetime(df[EXPIRATION_COLUMN], format="mixed"))
+        .sort_values([*LINE_KEY, "_expiry", LOT_COLUMN], na_position="last", kind="stable")
+    )
+    lots = by_expiry[by_expiry[LOT_COLUMN].notna()].copy()
+    lots[LOT_SEQ_COLUMN] = lots.groupby(LINE_KEY).cumcount() + 1
+    lots = lots[LOT_LOAD_COLUMNS].reset_index(drop=True)
+
+    keyed = df[LINE_KEY].notna().all(axis=1)
+    repeated = keyed & df.duplicated(LINE_KEY, keep=False)
+    if not repeated.any():
+        return df, lots
+
+    others = [c for c in df.columns if c not in (LOT_COLUMN, EXPIRATION_COLUMN)]
+    variants = df.loc[repeated, others].drop_duplicates()
+    clash = variants.duplicated(LINE_KEY, keep=False)
+    if clash.any():
+        clash_keys = variants.loc[clash, LINE_KEY].drop_duplicates()
+        examples = [tuple(k) for k in clash_keys.head(10).itertuples(index=False)]
+        raise ValueError(
+            f"{source_name}: {len(clash_keys)} order line(s) {LINE_KEY} repeat with values "
+            f"other than Lot / Expiration differing (not a lot split), e.g. {examples}."
+        )
+
+    combined = (
+        by_expiry[by_expiry.index.isin(df.index[repeated])]
+        .groupby(LINE_KEY)
+        .agg(**{
+            LOT_COLUMN: (LOT_COLUMN, _join_lots),
+            # "first" skips blanks, and the rows are in expiration order
+            EXPIRATION_COLUMN: (EXPIRATION_COLUMN, "first"),
+        })
+    )
+    lines = df[~(keyed & df.duplicated(LINE_KEY))].reset_index(drop=True)
+    multi = pd.MultiIndex.from_frame(lines[LINE_KEY]).isin(combined.index)
+    for col in (LOT_COLUMN, EXPIRATION_COLUMN):
+        lines.loc[multi, col] = (
+            combined[col].reindex(pd.MultiIndex.from_frame(lines.loc[multi, LINE_KEY])).to_numpy()
+        )
+    print(
+        f"NOTE: {multi.sum()} order line(s) shipped from more than one lot "
+        f"({repeated.sum()} rows) — one row each, lots joined in '{LOT_COLUMN}'."
+    )
+    return lines, lots
+
+
+def _join_lots(lots):
+    lots = lots.dropna().drop_duplicates()
+    return LOT_SEPARATOR.join(lots) if len(lots) else pd.NA
 
 
 def validate_keys(df, source_name):
@@ -238,21 +365,33 @@ def coerce_types(df):
     return df
 
 
+def coerce_lot_types(lots):
+    """Order Create Date / Expiration -> date, Lot Seq -> int."""
+    for col in ("Order Create Date", EXPIRATION_COLUMN):
+        lots[col] = pd.to_datetime(lots[col], format="mixed").dt.date
+    lots[LOT_SEQ_COLUMN] = lots[LOT_SEQ_COLUMN].astype("Int64")
+    return lots
+
+
 def prepare(file_path):
     """Read, check and cleanse ONE export into the load shape.
 
-    Returns (rows, report_date, warnings). *report_date* comes from the footer,
-    so it is known even for a file with no order lines.
+    Returns a ``Prepared``: *rows* (one per order line, LOAD_COLUMNS), *lots*
+    (one per lot shipped, LOT_LOAD_COLUMNS), *report_date* (from the footer,
+    so known even for a file with no order lines), *warnings* and *alerts*.
     """
     source_name = os.path.basename(file_path)
-    df, totals, footer = read_order_detail_file(file_path)
+    df, totals, footer, column_warnings = read_order_detail_file(file_path)
     report_date = parse_report_date(footer, source_name)
-    print(f"Read {len(df)} order line(s) from {source_name} (Report Date {report_date}).")
-    warnings = check_totals(df, parse_totals(totals), source_name)
+    print(f"Read {len(df)} row(s) from {source_name} (Report Date {report_date}).")
     df = medline_keys.strip_order_line(df, "Order Line")
+    df, lots = split_lots(df, source_name)
+    warnings, alerts = check_totals(df, parse_totals(totals), source_name)
+    warnings = column_warnings + warnings
     validate_keys(df, source_name)
     df = add_derived_columns(df)
     df = coerce_types(df)
+    lots = coerce_lot_types(lots)
     df[REPORT_DATE_COLUMN] = report_date
     df[SOURCE_FILE_COLUMN] = source_name
-    return df[LOAD_COLUMNS], report_date, warnings
+    return Prepared(df[LOAD_COLUMNS], lots, report_date, warnings, alerts)

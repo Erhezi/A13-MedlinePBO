@@ -3,7 +3,9 @@
 #   Hourly day-replace load: newest mailed export ->
 #   [MedlineOrderTiming].[medlineordertiming_stg] -> its Report Date replaced
 #   in [MedlineOrderTiming].[MedlineOrderTiming], keyed on
-#   (Report Date, Order #, Order Line).
+#   (Report Date, Order #, Order Line). Each lot shipped ->
+#   [MedlineOrderTiming].[medlinelot_stg] -> upsert into
+#   [MedlineOrderTiming].[MedlineLot] on (Order #, Order Line, Lot Seq).
 #   Hourly feed since 2026-11-17 (one test file a day before that).
 #   Scheduled every day hourly at :28, 06:28–23:28 (2 min before Fill-Kill).
 # ──────────────────────────────────────────────
@@ -30,7 +32,7 @@ email:
   max_mail_age_minutes: 90
 
 report:
-  version: "1.1"
+  version: "1.2"
   # --------------------  v1.0 - 2026-11-16 --------------------
   # - one row per order line; source column names kept as-is (stripped,
   #   typos included); added PO (leading 10 digits of "PO#"), POLine
@@ -57,6 +59,23 @@ report:
   # - the 2623 rows already loaded (Report Date 2026-11-17) were fixed once
   #   by SQL: Order Line stripped, SoldTo filled (load stamp untouched)
   # ---------------------------------------------------------------------
+  # --------------------  new in v1.2 - 2026-11-18 --------------------
+  # - from the 2026-11-17 03-06-44 file on, a shipped line is listed once per
+  #   lot (only Lot / Expiration differ), so (Order #, Order Line) repeated
+  #   and 9 runs failed (always 28 rows over "# of Order Lines")
+  # - such a line now loads as one row: Lot = its lots joined " | " (earliest
+  #   expiration first; Lot ALTERed to VARCHAR(255) in both tables), and
+  #   Expiration = the earliest
+  # - new MedlineLot table (+ medlinelot_stg): one row per lot, PK (Order #,
+  #   Order Line, Lot Seq), upserted with create / update stamps
+  # - a "# of Order Lines" mismatch no longer fails the run: it is a warning
+  #   ("file line N, M line were read") emailed to warning_recipients
+  # - a column outside the expected layout is not loaded and is a warning in
+  #   ETL health (no email), as in Fill-Kill; before it was silently ignored
+  # - quantities stay line-level: a multi-lot line keeps its Order / Shipped
+  #   Qty as listed (Medline repeats the line's totals on each lot row)
+  # - 2026-11-17 reloaded from its last file (11-00-08): 3320 lines, 527 lots
+  # ---------------------------------------------------------------------
   # No Excel output. output_dir is used only by the monthly maintenance step,
   # to archive downloaded raw files older than this month.
   output_dir: '\\montefiore.org\centralfiles\data\Procurement PMO\dli2\Medline OrderTiming\Raw'
@@ -71,6 +90,10 @@ notification:
   success_recipients: []
   success_cc_recipients: []
   failure_recipients:
+    - "dli2@montefiore.org"
+  # Emailed (source file attached) when a run loads but the file's
+  # "# of Order Lines" total differs from the lines read.
+  warning_recipients:
     - "dli2@montefiore.org"
   test_recipients:
     - "dli2@montefiore.org"
@@ -117,3 +140,5 @@ persistence:
   schema: "MedlineOrderTiming"
   staging_table: "medlineordertiming_stg"   # truncated + reloaded every run
   target_table: "MedlineOrderTiming"        # PK (Report Date, Order #, Order Line); latest file per day
+  lot_staging_table: "medlinelot_stg"       # truncated + reloaded every run
+  lot_table: "MedlineLot"                   # PK (Order #, Order Line, Lot Seq); upserted, never deleted

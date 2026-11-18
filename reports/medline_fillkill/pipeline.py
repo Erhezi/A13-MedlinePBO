@@ -38,10 +38,13 @@ def run(config, secrets, ctx):
         ctx.warnings.append(stale)
     ctx.progress.step(f"Email attachment downloaded: {found.file_name}")
 
-    # ── 2. Ingest, check the primary key & cleanse (a violation raises -> FAIL;
-    #       a column outside the expected layout only warns) ──
-    df, warnings = ingestion.prepare(save_path)
-    ctx.warnings.extend(warnings)
+    # ── 2. Ingest, check the primary key & cleanse (a missing column or key
+    #       raises -> FAIL; a column outside the expected layout only warns; a
+    #       repeated line keeps its first row and warns by email) ──
+    prepared = ingestion.prepare(save_path)
+    df = prepared.rows
+    ctx.warnings.extend(prepared.warnings)
+    ctx.alerts.extend(prepared.alerts)
     ctx.row_count = len(df)
     ctx.progress.step(f"File ingested & cleansed — {len(df)} rows")
 
