@@ -1,8 +1,8 @@
-"""Medline Daily Autosub Management pipeline — daily load, scheduled several times a day.
+"""Medline Daily Autosub Management pipeline — daily load, scheduled twice a day.
 
-Medline mails the report around 7:20 AM and sometimes re-sends a fuller version
-later the same day (2026-10-27: a 1:50 PM resend with 61 rows vs 35). The task
-runs every 4 hours on weekdays (7:50 AM, 11:50 AM, 3:50 PM) and each run:
+Medline mails the report every day around 7:30 AM. Earlier it sometimes re-sent
+a fuller version later the same day (2026-10-27: a 1:50 PM resend with 61 rows
+vs 35). The task runs every day at 7:50 AM and 8:50 AM and each run:
 
   1. looks up today's last SUCCESS for this process in ETL health;
   2. downloads the newest export received since that load started — or since

@@ -6,7 +6,7 @@
     Registers one task per report. Each runs this folder's run_medline_<report>.bat
     with --prd (no success emails for these loads; failures email):
 
-      Medline Daily Autosub        Mon-Fri, every 4 hours at :50, 7:50 AM - 3:50 PM
+      Medline Daily Autosub        every day, twice: 7:50 AM and 8:50 AM
       Medline Order Timing Hourly  every day, hourly at :28, 6:28 AM - 11:28 PM
       Medline Fill-Kill Hourly     every day, hourly at :30, 6:30 AM - 11:30 PM
 
@@ -32,8 +32,8 @@
 
 .PARAMETER Start
     Other start times, as report=HH:mm (24-hour, local time); each run then
-    comes every hour (Autosub every 4 hours) from that time until the usual
-    end (11:59 PM, Autosub 5:00 PM). For a second machine that also runs
+    comes every hour from that time until the usual end (11:59 PM, Autosub
+    9:00 AM). For a second machine that also runs
     these loads, so its runs never meet the server's on the staging tables:
     -Start ordertiming=06:35,fillkill=06:37
 
@@ -98,9 +98,9 @@ $Tasks = [ordered]@{
         Name          = 'Medline Daily Autosub'
         Bat           = 'run_medline_autosub.bat'
         Start         = '07:50'
-        End           = '17:00'
-        IntervalHours = 4
-        WeekdaysOnly  = $true
+        End           = '09:00'
+        IntervalHours = 1
+        WeekdaysOnly  = $false
         Summary       = 'Medline Daily Autosub Management load (A13-MedlinePBO, --report medline_autosub)'
         Detail        = 'loads each new Medline export once, otherwise skips.'
     }

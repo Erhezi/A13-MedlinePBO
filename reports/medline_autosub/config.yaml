@@ -1,8 +1,7 @@
 # ──────────────────────────────────────────────
 # Medline Daily Autosub Management Pipeline — Configuration
-#   Mailed daily (~7:20 AM, occasionally re-sent later); scheduled every 4 hours
-#   on weekdays 7:50 AM-5 PM (runs 7:50, 11:50, 3:50), loads each new export
-#   once: today's export
+#   Mailed daily (~7:30 AM, weekends included); scheduled every day at
+#   7:50 AM and 8:50 AM, loads each new export once: today's export
 #   -> [MedlineAutoSub].[medlineautosub_stg] -> upsert into
 #   [MedlineAutoSub].[MedlineAutosub] on (PRIMARY ML #, AutoSub, Report Date),
 #   and its pairs into [MedlineAutoSub].[MedlineAutosubRelation] on
@@ -28,8 +27,9 @@ email:
   # Only mail received since local midnight is searched (no inbox_lookback_days).
   # A run before this local time that finds no mail yet skips quietly; a run at
   # or after it fails and emails. Keep it quoted — YAML reads a bare 09:00 as
-  # a number.
-  expected_by: "09:00"
+  # a number. Between the 7:50 and 8:50 AM runs, so a missing mail skips at
+  # 7:50 and fails (and emails) at 8:50.
+  expected_by: "08:30"
 
 report:
   version: "1.1"
